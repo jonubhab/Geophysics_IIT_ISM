@@ -1,6 +1,10 @@
-import os, subprocess,threading,socket,sys,time
+import os, subprocess,threading,socket,sys,pickle
 import msnoise.api as ms
+import msnoise.msnoise_table_def as config
 import urllib.request
+from datetime import *
+import time as T
+
 
 if len(sys.argv) > 1:
     dir = sys.argv[1]
@@ -10,50 +14,125 @@ if len(sys.argv) > 1:
 else:
     dir = input("Enter the path of root directory: ").strip()
     if not dir.startswith("/"): dir = "/" + dir
-    if not os.path.isabs(dir):
-        raise ValueError(f"Please enter an absolute path (starting with /). Got: {dir}")
-    if not os.path.exists(dir):
-        raise ValueError(f"Directory does not exist: {dir}")
 
+if not os.path.exists(dir):
+    raise ValueError(f"Directory does not exist: {dir}")
 
-print("Select Data Structure:")
-i=1
-with open("Structures","r") as f:
-    for l in f.readlines():
-        print(f"[{i}] {l.strip()}")
-        i+=1
-print(f"[{i}] Create New Data Structure")
-struc=int(input("Your Choice: "))
-
-wt,cus=False,struc>4
-if not(0<struc<=i):
-    raise ValueError("Invalid choice")
-elif struc!=i:
-    if struc==5: wt=True
-    struc=open("Structures","r").readlines()[struc-1].split('\"')[1]
-else:
-    name=input("Name of Data Structure: ")
-    struc=input("Data Structure (Path from root directory): ").strip()
-    with open("Structures","a") as f:
-        f.write(f"\n{name} : \"{struc}\"")
-
-
+org=os.getcwd()
 ctrl=os.path.join(dir, "Control")
-
 os.makedirs(ctrl, exist_ok=True)
 os.chdir(ctrl)
 
 msn="msnoise"
 
-subprocess.run([msn, "db", "init", "--tech", "1"], check=True)
-db=ms.connect()         #$ ms db init
+new=not os.path.exists("db.ini")
+base=new and os.path.exists("msnoise.sqlite")
 
-ms.update_config(db,"data_folder",dir)
-ms.update_config(db,"data_structure",struc)
-ms.update_filter(db, ref=1, low=0.05, mwcs_low=0.05, high=5.0, mwcs_high=5.0,
-                 rms_threshold=0.0, mwcs_wlen=25.0, mwcs_step=5.0, used=True)
-db.commit()
-db.close()
+if not (new or os.path.exists("msnoise.sqlite")) and pickle.load(open("db.ini", "rb"))[0] == 1:
+    os.remove("db.ini")
+    new=True
+
+
+
+def info(n):
+    global net
+    try:
+        return open("info","r").readlines()[n].split(':')[1].strip()
+    except:
+        print("info file might have been corrupted.")
+        if n==2:
+            net=None
+            if not any(fol=="NET" for fol in struc.split("/")):
+                net=input("Network can't be detected from data structure.\nEnter network name: ")
+        with open("info", "w") as f:
+            f.write(f"Root Directory : {dir}\n")
+            f.write(f"Data Structure : {struc}\n")
+            f.write(f"Network : {net if net else 'dynamic'}\n")
+            f.write(f"data available : {db.query(config.DataAvailability).count() > 0}\n")
+            f.write(f"jobs initialized : {db.query(config.Job).count() > 0}\n")
+            if n == 5:
+                f.write(f"Last Scan : \n")
+                return ""
+            else: f.write(f"Last Scan : {info(5)}\n")
+        return open("info","r").readlines()[n].split(':')[1].strip()
+
+def update(n,inf):
+    with open("info", "w") as f:
+        f.write(f"Root Directory : {info(0) if n!=0 else inf}\n")
+        f.write(f"Data Structure : {info(1) if n!=1 else inf}\n")
+        f.write(f"Network : {info(2) if n!=2 else inf}\n")
+        f.write(f"data available : {info(3) if n!=3 else inf}\n")
+        f.write(f"jobs initialized : {info(4) if n!=4 else inf}\n")
+        f.write(f"Last Scan : {info(5) if n!=5 else inf}\n")
+
+
+def run(cmd, critical=True):
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        if critical:
+            print(f"Critical step failed: {' '.join(cmd)}")
+            sys.exit(1)
+        else:
+            print(f"Warning: {' '.join(cmd)} failed, continuing...")
+
+if new:
+    run([msn, "db", "init"], critical=True)
+    db=ms.connect()
+
+    ms.update_config(db,"data_folder",dir)
+
+    ms.update_filter(db, ref=1, low=0.05, mwcs_low=0.05, high=5.0, mwcs_high=5.0,
+                     rms_threshold=0.0, mwcs_wlen=25.0, mwcs_step=5.0, used=True)
+
+    print("Select Data Structure:")
+    i = 1
+    with open(os.path.join(org,"Structures"), "r") as f:
+        for l in f.readlines():
+            print(f"[{i}] {l.strip()}")
+            i += 1
+    print(f"[{i}] Create New Data Structure")
+    choice = int(input("Your Choice: "))
+
+    net, cus = None, choice > 4
+    if not (0 < choice <= i):
+        raise ValueError("Invalid choice")
+    elif choice != i:
+        tmp=open(os.path.join(org,"Structures"), "r").readlines()[choice - 1].split('\"')
+        struc = tmp[1]
+        if len(tmp) > 3: net=tmp[3]
+    else:
+        name = input("Name of Data Structure: ")
+        struc = input("Data Structure (Path from root directory): ").strip()
+        if not any(fol=="NET" for fol in struc.split("/")):
+            net=input("Network can't be detected from data structure.\nEnter network name: ")
+            with open(os.path.join(org,"Structures"), "a") as f:
+                f.write(f"\n{name} : \"{struc}\"\t[NETWORK: \"{net}\"]\n")
+        else:
+            with open(os.path.join(org,"Structures"), "a") as f:
+                f.write(f"\n{name} : \"{struc}\"\n")
+
+    with open("info","w") as f:
+        f.write(f"Root Directory : {dir}\n")
+        f.write(f"Data Structure : {struc}\n")
+        f.write(f"Network : {net if net else 'dynamic'}\n")
+        f.write(f"data available : {info(3) if base else False}\n")
+        f.write(f"jobs initialized : {info(4) if base else False}\n")
+        f.write(f"Last Scan : {info(5) if base else ''}\n")
+
+    ms.update_config(db, "data_structure", struc)
+
+
+
+
+
+    db.commit()
+else:
+    db = ms.connect()
+    struc=ms.get_config(db, "data_structure")
+    cus= not (any(struc==pre for pre in ["SDS","BUD","IDDS","PDF"]))
+    net=info(2)
+    if net == 'dynamic': net = None
+
 
 
 q,n='"',"\n"
@@ -77,12 +156,18 @@ for i in range(1,len(struc)):
     if struc[-i-1]=="STA": i_sta=i
     if struc[-i-1]=="NET": i_net=i
 
-if i_net==0: net = {f"{q}Y2{q}" if wt else f"input({q}Network can't be detected from data structure.{n}Enter network name: {q})"}
+if i_net==0: net = "{net}"
 if i_sta==0: raise ValueError("Stations cannot be detected from Data Structure.")
 
 seek=lambda x,n:reduce(lambda di, _: os.path.split(di)[0], range(n), x)
 st=lambda x: os.path.split(seek(x,i_sta-1))[1]
 nt=lambda x: os.path.split(seek(x,i_net-1))[1]
+
+def has_mseed(directory):
+    for root, dirs, files in os.walk(directory):
+        if any(f.endswith('.MSEED') or f.endswith('.mseed') for f in files):
+            return True
+    return False
 
 def populate(data_folder):  
     global net
@@ -90,7 +175,7 @@ def populate(data_folder):
     stationdict = {{}}
     
     for di in datalist:
-        if os.path.commonpath([di, "{ctrl}"]) != "{ctrl}" and not any(ext in di for ext in [".txt",".py",".ini",".sqlite",".pyc"]):                 
+        if os.path.commonpath([di, "{ctrl}"]) != "{ctrl}" and os.path.isdir(di) and has_mseed(di) and  "All" not in di:                 
             sta = st(di)
             if i_net!=0: net = nt(di)
             stationdict[net+"_"+sta]=[net,sta,*coords[net+"_"+sta],'UTM','N/A'] #Adding station details in a dictionary
@@ -100,10 +185,48 @@ def populate(data_folder):
 if cus:
     with open(os.path.join(ctrl,"custom.py"),"w") as cus: cus.write(custom)
 
+run([msn, "populate"])
 
-subprocess.run([msn, "populate"], check=True)
-subprocess.run([msn, "scan_archive", "--path", dir, "--init", "--recursively"], check=True)
-subprocess.run([msn, "new_jobs", "--init"], check=True)
+if db.query(config.Station).count() == 0:
+    raise RuntimeError("Critical: populate failed - no stations added.")
+
+def mseed(dir):
+    if not os.path.isdir(dir): return any(dir.endswith(ext) for ext in [".MSEED",".mseed"])
+    for root, dirs, files in os.walk(dir):
+        if any(f.endswith('.MSEED') or f.endswith('.mseed') for f in files):
+            return True
+    return False
+
+
+lastscan=datetime.strptime(info(5), '%Y-%m-%d %H:%M:%S') if len(info(5))>0 else None
+if lastscan: ms.update_config(db, "crondays", str(max(1, (datetime.now() - lastscan).days)))
+
+exclude = {'All', 'Control'}
+dirs = [d for d in os.listdir(dir) if mseed(os.path.join(dir, d)) and d not in exclude]
+if new or info(3) == 'False':
+    cmd = [msn, "scan_archive","--init","--recursively", "--path",dir]
+    update(3, "True")
+else: cmd = [msn, "scan_archive","--recursively", "--path",dir]
+for d in dirs:
+    cmd[-1]=os.path.join(dir,d)
+    run(cmd)
+
+update(5,datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+if new or info(4):
+    run([msn, "new_jobs", "--init"], critical=False)
+    update(4,"True")
+else: run([msn, "new_jobs"], critical=False)
+
+
+
+last = db.query(config.DataAvailability).order_by(config.DataAvailability.endtime.desc()).first()
+if last:
+    end = (last.endtime + timedelta(days=1)).strftime("%Y-%m-%d")
+    ms.update_config(db, "enddate", end)
+    db.commit()
+
+db.close()
 
 
 port=5000
@@ -119,16 +242,16 @@ def run_admin():
     from msnoise.msnoise_admin import app
     app.run(host="localhost", port=port)
     '''
-    subprocess.run([msn,"admin"],check=True)
+    run([msn,"admin","-p",str(port)])
 
 def wait_for_server(port, timeout=30):
-    start = time.time()
-    while time.time() - start < timeout:
+    start = T.time()
+    while T.time() - start < timeout:
         try:
             urllib.request.urlopen(f"http://localhost:{port}")
             return True
         except:
-            time.sleep(0.5)
+            T.sleep(0.5)
     return False
 
 
@@ -137,8 +260,7 @@ try:
     t.start()
     if wait_for_server(port,5):
         subprocess.Popen(["firefox", f"http://localhost:{port}"])
-    subprocess.Popen(["gnome-terminal", "--working-directory", ctrl, "--", "bash", "-c",
-                      "source ~/anaconda3/etc/profile.d/conda.sh && conda activate msnoise_new; exec bash"])
+    subprocess.Popen(["gnome-terminal", "--working-directory", ctrl, "--", "bash", "-i", "-c","conda activate msnoise_new; exec bash"])
     t.join()
 except KeyboardInterrupt:
     print("\nWeb Admin engine stopped.")

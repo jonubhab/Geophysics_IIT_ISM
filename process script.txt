@@ -1,0 +1,31 @@
+$ nano ~/anaconda3/envs/msnoise_new/bin/process
+
+
+#!/bin/bash
+SCRIPT_DIR="/home/arjun/Anubhab Sen/PyCharm/Noise"
+
+PATH_ARG=""
+if [[ "$1" == "--path" ]]; then
+    PATH_ARG=$(realpath "$2")
+fi
+
+pushd "$SCRIPT_DIR" > /dev/null
+if [[ -n "$PATH_ARG" ]]; then
+    python Process.py "$PATH_ARG"
+else
+    python Process.py
+fi
+popd > /dev/null
+
+
+^O ^X
+
+
+$ nano ~/.bashrc
+
+
+chmod +x ~/anaconda3/envs/msnoise_new/bin/process
+
+
+^O ^X
+
