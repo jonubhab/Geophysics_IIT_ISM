@@ -6,17 +6,23 @@ class Meta(type):
     def i(cls):
         return cls(0,1)
 
-
-
 class Complex(metaclass=Meta):
 
 
     def __init__(s,x=0,y=0):
 
-        if np.ndim(x)==0 and np.ndim(y)==0:
+        if type(x) is Complex or type(y) is Complex:
+            s.x = Re(x) - Im(y)
+            s.y = Im(x) + Re(y)
+            if x.arr or y.arr:
+                s.C = [Complex(s.x[i], s.y[i]) for i in range(len(x))]
+                s.arr = True
+            else:
+                s.arr = False
+
+        elif np.ndim(x) == 0 and np.ndim(y) == 0:
             s.x=x
             s.y=y
-
             s.arr=False
 
         elif len(x)==len(y):
@@ -27,6 +33,18 @@ class Complex(metaclass=Meta):
 
         else:
             raise ValueError("Lists must be of equal length.")
+
+        s.__clean()
+
+    def __clean(s):
+        if s.arr:
+            map(lambda x: x.__clean(), s.C)
+            s.x = np.array(list(map(Re, s.C)))
+            s.y = np.array(list(map(Im, s.C)))
+            return
+        if abs(round(s.x) - s.x) <= EPS: s.x = round(s.x)
+        if abs(round(s.y) - s.y) <= EPS: s.y = round(s.y)
+
 
 
     def isInt(s):
@@ -53,9 +71,18 @@ class Complex(metaclass=Meta):
         if self.arr: return len(self.C)
         else: raise TypeError(f"Scalar Complex '{self}' has no length.")
 
-    def __getitem__(self, i):
-        if self.arr: return self.C[i]
+    def __getitem__(self, key):
+        if self.arr:
+            return self.C[key]
         else: raise TypeError(f"Scalar Complex '{self}' is not subscriptable.")
+
+    def __setitem__(s, key, val):
+        if s.arr:
+            s.x[key] = Re(val)
+            s.y[key] = Im(val)
+            s.C[key] = val
+        else:
+            raise TypeError(f"Scalar Complex '{s}' is not subscriptable.")
 
     def __index__(s):
         if not s.arr and s.isInt(): return Re(s)
@@ -110,8 +137,10 @@ class Complex(metaclass=Meta):
 
         if o.isInt():
             C=Complex(1,0)
-            for j in range(Re(o)):
-                C*=s
+            if o > 0:
+                for j in range(Re(o)): C *= s
+            elif o < 0:
+                for j in range(Re(o)): C /= s
             return C
         A=abs(s)
         t=arg(s)
@@ -120,11 +149,61 @@ class Complex(metaclass=Meta):
         return A**x*e**(-y*t+i*(x*t+np.log(A)*y))
 
     def __rpow__(s,A):
-        #print(A,s.x)
+        if np.ndim(A) != 0:
+            if s.arr:
+                return np.array(list(map(lambda x, y: x ** y, A, s)))
+            else:
+                return np.array(list(map(lambda x: x ** s, A)))
+        elif s.arr:
+            return np.array(list(map(lambda x: A ** x, s)))
         if A == e and s.x==0: return Complex(np.cos(s.y),np.sin(s.y))
         return A**s.x * e**(i*np.log(A)*s.y)
 
+    def __rtruediv__(s, A):
+        return A * ~s / abs(s) ** 2
 
+    def __truediv__(s, o):
+        if o.isReal(): return Complex(s.x / Re(o), s.y / Re(o))
+        return s * (1 / o)
+
+    def __itruediv__(s, o):
+        return s / o
+
+    def __eq__(s, o):
+        return s.x == o.x and s.y == o.y
+
+    def __ne__(s, o):
+        return s.x != o.x or s.y != o.y
+
+    def __lt__(s, o):
+        if s.arr: return np.array(list(map(lambda x: x < o, s)))
+        if type(o) is Complex and o.arr: return np.array(list(map(lambda x: s < x, o)))
+        if s.isReal() and o.isReal(): return Re(s) < Re(o)
+        raise ValueError(f"{s} cannot be interpreted as an integer")
+
+    def __le__(s, o):
+        if s.arr: return np.array(list(map(lambda x: x <= o, s)))
+        if type(o) is Complex and o.arr: return np.array(list(map(lambda x: s <= x, o)))
+        if s.isReal() and o.isReal(): return Re(s) <= Re(o)
+        raise ValueError(f"{s} cannot be interpreted as an integer")
+
+    def __gt__(s, o):
+        if s.arr: return np.array(list(map(lambda x: x > o, s)))
+        if type(o) is Complex and o.arr: return np.array(list(map(lambda x: s > x, o)))
+        if s.isReal() and o.isReal(): return Re(s) > Re(o)
+        raise ValueError(f"{s} cannot be interpreted as an integer")
+
+    def __ge__(s, o):
+        if s.arr: return np.array(list(map(lambda x: x >= o, s)))
+        if type(o) is Complex and o.arr: return np.array(list(map(lambda x: s >= x, o)))
+        if s.isReal() and o.isReal(): return Re(s) >= Re(o)
+        raise ValueError(f"{s} cannot be interpreted as an integer")
+
+    def scatter(self, ax):
+        ax.scatter(self.x, self.y)
+
+
+EPS = np.finfo(np.float64).eps
 e =np.e
 pi=np.pi
 i = Complex.i
@@ -139,7 +218,7 @@ def Im(s:Complex):
 
 def sca_arg(s):
     if type(s) is not Complex: return np.arctan2(0,s)
-    return np.atan2(s.y,s.x)
+    return np.arctan2(s.y, s.x)
 arg=np.vectorize(sca_arg)
 
 
@@ -147,10 +226,10 @@ curse(int, "isInt", lambda x: True)
 curse(np.int64,"isInt",lambda x: True)
 curse(float, "isInt", lambda x: int(x)==x)
 curse(np.float64, "isInt", lambda x: int(x)==x)
-curse(np.ndarray,"isInt", lambda x: np.array(y%1==0 for y in x))
+curse(np.ndarray, "isInt", lambda x: np.array([y % 1 == 0 for y in x]))
 
 curse(int, "isReal", lambda x: True)
 curse(float, "isReal", lambda x: True)
 curse(np.int64,"isReal",lambda x: True)
 curse(np.float64,"isReal",lambda x: True)
-curse(np.ndarray,"isReal", lambda x: np.array(y.isReal() for y in x))
+curse(np.ndarray, "isReal", lambda x: np.array([y.isReal() for y in x]))
