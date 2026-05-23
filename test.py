@@ -1,11 +1,15 @@
 from functools import reduce
 import os
 import numpy as np
-from Complex import Complex as C
+from Complex import *
 
 
-print()
-print(C([1,2],[3,2])+C([2,0],[2,-1]))
+print(Complex(1,1)**np.array([1,2,Complex(2,0),4]))
+print(arg(e**i))
+print(np.e**Complex.i)
+print(-np.array([2,1]))
+print(2*i+8)
+print(Complex([1,2],[3,2])+Complex(2,4))
 
-print(type(C(0)) is C)
+print(type(Complex(0)) is Complex)
 
