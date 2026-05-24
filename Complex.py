@@ -42,8 +42,8 @@ class Complex(metaclass=Meta):
             s.x = np.array(list(map(Re, s.C)))
             s.y = np.array(list(map(Im, s.C)))
             return
-        if abs(round(s.x) - s.x) <= EPS: s.x = round(s.x)
-        if abs(round(s.y) - s.y) <= EPS: s.y = round(s.y)
+        if abs(round(s.x) - s.x) <= 5*EPS: s.x = round(s.x)
+        if abs(round(s.y) - s.y) <= 5*EPS: s.y = round(s.y)
 
 
 
@@ -138,9 +138,9 @@ class Complex(metaclass=Meta):
         if o.isInt():
             C=Complex(1,0)
             if o > 0:
-                for j in range(Re(o)): C *= s
+                for j in range(int(o)): C *= s
             elif o < 0:
-                for j in range(Re(o)): C /= s
+                for j in range(int(o)): C /= s
             return C
         A=abs(s)
         t=arg(s)
@@ -203,6 +203,8 @@ class Complex(metaclass=Meta):
         ax.scatter(self.x, self.y)
 
 
+
+
 EPS = np.finfo(np.float64).eps
 e =np.e
 pi=np.pi
@@ -213,7 +215,11 @@ def Re(s):
     return s.x
 
 def Im(s:Complex):
-    if type(s) is not Complex: return 0
+    if type(s) is not Complex:
+        try:
+            return np.array(list(map(Im,s)))
+        except TypeError:
+            return 0
     return s.y
 
 def sca_arg(s):

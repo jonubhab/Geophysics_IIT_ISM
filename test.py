@@ -1,7 +1,9 @@
 from Complex import *
 
-x = [1, 0, 0, 0, 0, -1, 0]
-y = [0, 1, 2, -1, -2, 0, 0]
+x = [1.25, -0.75, 1.25, -0.75]
+y = [0, 0, 0, 0]
+print(np.array(list(map(Im,1))))
+print(Complex(x,y)*np.array([1,1,1,1]))
 print(np.array(y).isInt())
 print(Complex(x, y))
 print(np.arange(5))

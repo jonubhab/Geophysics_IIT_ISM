@@ -17,7 +17,7 @@ def coeff(y: np.ndarray, t: Optional[np.ndarray] = None):
     f = t * N / T ** 2
     A = Complex(np.zeros(N), np.zeros(N))
     for k in range(N):
-        A[k] = sum(y * e ** (-i * 2 * pi * t[k] * t * N / T ** 2)) / N
+        A[k] = sum(y * e ** (-i * 2 * pi * t[k] * f)) / N
 
     return A, f
 
@@ -30,12 +30,31 @@ def build(A: Union[np.ndarray, Complex], f: Optional[np.ndarray] = None):
         if not np.all(f[:-1] < f[1:]): raise ValueError(f"f must be sorted but received {f}")
         if len(A) != len(f): raise ValueError(f"A and f must have the same length")
 
+    '''
+    #cir=e**(i*2*pi*f)
     def fit(t):
-        if hasattr(t, '__iter__'):
-            return np.array(list(map(fit, t)))
-        return Re(sum(A * e ** (i * 2 * pi * f * t)))
+        #if hasattr(t, '__iter__'):
+        #    return np.array(list(map(fit, t)))
+        return Re(sum(A * e**(i*2*pi*f* t),Complex(0,0)))
+    '''
+    def fit(t):
+        phase = i * 2 * pi * f * t
+        exp_term = e ** phase
+        print(f"Im of exp_term at t={t}: {[Im(exp_term[k]) for k in range(N)]}")
+        product = A * exp_term
+        total = sum(product, Complex(0, 0))
 
-    return fit
+        if t in (0, 2):  # only print at the broken points
+            print(f"\nt={t}")
+            print(f"  phase:    {phase}")
+            print(f"  exp_term: {exp_term}  type={type(exp_term)}")
+            print(f"  amplitude:{A}  type={type(A)}")
+            print(f"  product:  {product}  type={type(product)}")
+            print(f"  total:    {total}")
+
+        return Re(total)
+
+    return np.vectorize(fit)
 
 
 def plot(f, a, b, ax=plt, res=1000):
@@ -44,14 +63,20 @@ def plot(f, a, b, ax=plt, res=1000):
     ax.plot(x, y)
 
 
-x = np.linspace(0, 4, 5)
+x = np.linspace(0, 2*pi, 5)
 y = np.sin(x)
 
-A, f = coeff(y)
+print(y)
 
-plt.scatter(x, y)
-plot(np.sin, 0, 5)
-plot(build(A, f), 0, 5)
+A, f = coeff(np.array([1,0,4,0]))
+
+fit = build(A, f)
+print(fit(0), fit(1), fit(2), fit(3))
+print(Re(Complex(1.0, 0.0)))
+print(e**(i*2*pi*0))
+#plt.scatter(x, y)
+#plot(np.sin, 0, 5)
+#plot(fit, 0, 5)
 
 print(A)
 plt.show()
