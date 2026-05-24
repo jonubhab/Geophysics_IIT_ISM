@@ -39,8 +39,8 @@ class Complex(metaclass=Meta):
     def __clean(s):
         if s.arr:
             map(lambda x: x.__clean(), s.C)
-            s.x = np.array(list(map(Re, s.C)))
-            s.y = np.array(list(map(Im, s.C)))
+            s.x = np.array(list(map(Re, s.C)),dtype=float)
+            s.y = np.array(list(map(Im, s.C)),dtype=float)
             return
         if abs(round(s.x) - s.x) <= 5*EPS: s.x = round(s.x)
         if abs(round(s.y) - s.y) <= 5*EPS: s.y = round(s.y)
@@ -210,16 +210,19 @@ e =np.e
 pi=np.pi
 i = Complex.i
 
+
 def Re(s):
-    if type(s) is not Complex: return s
+    if type(s) is np.ndarray:
+        return np.array([Re(x) for x in s])
+    if type(s) is not Complex:
+        return s
     return s.x
 
-def Im(s:Complex):
+def Im(s):
+    if type(s) is np.ndarray:
+        return np.array([Im(x) for x in s])
     if type(s) is not Complex:
-        try:
-            return np.array(list(map(Im,s)))
-        except TypeError:
-            return 0
+        return 0
     return s.y
 
 def sca_arg(s):

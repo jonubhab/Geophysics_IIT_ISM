@@ -30,31 +30,13 @@ def build(A: Union[np.ndarray, Complex], f: Optional[np.ndarray] = None):
         if not np.all(f[:-1] < f[1:]): raise ValueError(f"f must be sorted but received {f}")
         if len(A) != len(f): raise ValueError(f"A and f must have the same length")
 
-    '''
-    #cir=e**(i*2*pi*f)
+    cir=e**(i*2*pi*f)
     def fit(t):
-        #if hasattr(t, '__iter__'):
-        #    return np.array(list(map(fit, t)))
-        return Re(sum(A * e**(i*2*pi*f* t),Complex(0,0)))
-    '''
-    def fit(t):
-        phase = i * 2 * pi * f * t
-        exp_term = e ** phase
-        print(f"Im of exp_term at t={t}: {[Im(exp_term[k]) for k in range(N)]}")
-        product = A * exp_term
-        total = sum(product, Complex(0, 0))
+        if hasattr(t, '__iter__'):
+            return np.array(list(map(fit, t)))
+        return Re(sum(A*cir**t))
 
-        if t in (0, 2):  # only print at the broken points
-            print(f"\nt={t}")
-            print(f"  phase:    {phase}")
-            print(f"  exp_term: {exp_term}  type={type(exp_term)}")
-            print(f"  amplitude:{A}  type={type(A)}")
-            print(f"  product:  {product}  type={type(product)}")
-            print(f"  total:    {total}")
-
-        return Re(total)
-
-    return np.vectorize(fit)
+    return fit
 
 
 def plot(f, a, b, ax=plt, res=1000):
@@ -76,7 +58,7 @@ print(Re(Complex(1.0, 0.0)))
 print(e**(i*2*pi*0))
 #plt.scatter(x, y)
 #plot(np.sin, 0, 5)
-#plot(fit, 0, 5)
+plot(fit, 0, 5)
 
 print(A)
 plt.show()
