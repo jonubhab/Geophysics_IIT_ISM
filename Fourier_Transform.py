@@ -1,9 +1,12 @@
+import warnings
 from typing import Union, Optional
 
 import matplotlib.pyplot as plt
+from joblib import Memory
 
 from Complex import *
 
+memory = Memory("./fourier_cache", verbose=0)
 
 def coeff(y: np.ndarray, t: Optional[np.ndarray] = None):
     N = len(y)
@@ -22,19 +25,22 @@ def coeff(y: np.ndarray, t: Optional[np.ndarray] = None):
     return A, f
 
 
-def build(A: Union[np.ndarray, Complex], f: Optional[np.ndarray] = None):
+def build(A: Union[np.ndarray, Complex], f: Optional[np.ndarray] = None, n: int = 0):
     N = len(A)
+    if n == 0 or n > N:
+        if n > N: warnings.warn(f"Cannot generate {n} terms from a time signal of {N} terms.")
+        n = N
     if f is None:
         f = np.arange(0, 1, 1 / N)
     else:
         if not np.all(f[:-1] < f[1:]): raise ValueError(f"f must be sorted but received {f}")
         if len(A) != len(f): raise ValueError(f"A and f must have the same length")
 
-    cir=e**(i*2*pi*f)
+    cir = e ** (i * 2 * pi * f[:n])
     def fit(t):
         if hasattr(t, '__iter__'):
             return np.array(list(map(fit, t)))
-        return Re(sum(A*cir**t))
+        return Re(sum(A[:n] * cir ** t))
 
     return fit
 
@@ -45,20 +51,6 @@ def plot(f, a, b, ax=plt, res=1000):
     ax.plot(x, y)
 
 
-x = np.linspace(0, 2*pi, 5)
-y = np.sin(x)
-
-print(y)
-
-A, f = coeff(np.array([1,0,4,0]))
-
-fit = build(A, f)
-print(fit(0), fit(1), fit(2), fit(3))
-print(Re(Complex(1.0, 0.0)))
-print(e**(i*2*pi*0))
-#plt.scatter(x, y)
-#plot(np.sin, 0, 5)
-plot(fit, 0, 5)
-
-print(A)
-plt.show()
+@memory.cache
+def transform(y: np.ndarray, t: Optional[np.ndarray] = None, n: int = 0):
+    return build(*coeff(y, t), n)
