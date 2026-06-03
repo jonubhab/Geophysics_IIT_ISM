@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog
 
 import obspy as ob
+from matplotlib import pyplot as plt
 from plyer import notification
 
 import Fourier_Transform as ft
@@ -42,11 +43,10 @@ print(st[0].stats)
 data = st[0].data
 print(len(data))
 print("Fourier Transformation begins...")
-ft.transform(data)
-# ft.plot(ft.transform(data),0,len(data),plt,len(data))
+ft.plot(ft.transform(data), 0, len(data), plt, len(data))
 print("Fourier Transformation ends...")
 
-# plt.show()
+plt.show()
 
 # Plots the wave
 # st.plot()

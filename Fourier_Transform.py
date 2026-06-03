@@ -2,20 +2,23 @@ import warnings
 from typing import Union, Optional
 
 import matplotlib.pyplot as plt
+from finufft import nufft1d3 as nufft
 from joblib import Memory
 
 from Complex import *
 
-memory = Memory("./fourier_cache", verbose=0)
+mem = Memory("./fourier_cache", verbose=0)
 
-def coeff(y: np.ndarray, t: Optional[np.ndarray] = None):
+
+@mem.cache
+def DFT(y: np.ndarray, t: Optional[np.ndarray] = None):
     N = len(y)
     if t is None:
         t = np.arange(N)
-    else:
-        if not np.all(t[:-1] < t[1:]): raise ValueError(f"t must be sorted but received {t}")
-        if len(y) != len(t): raise ValueError(f'y(len:{N}) and t(len:{len(t)}) must have the same length')
-        t -= t[0]
+        return DFT(y, t)
+    if not np.all(t[:-1] < t[1:]): raise ValueError(f"t must be sorted but received {t}")
+    if len(y) != len(t): raise ValueError(f'y(len:{N}) and t(len:{len(t)}) must have the same length')
+    t -= t[0]
     T = t[-1] * N / (N - 1)
     f = t * N / T ** 2
     A = Complex(np.zeros(N), np.zeros(N))
@@ -25,24 +28,61 @@ def coeff(y: np.ndarray, t: Optional[np.ndarray] = None):
     return A, f
 
 
+@mem.cache
+def FFT(y: np.ndarray, t: Optional[np.ndarray] = None):
+    N = len(y)
+    if t is None:
+        t = np.arange(N)
+        return FFT(y, t)
+    if not np.all(t[:-1] < t[1:]): raise ValueError(f"t must be sorted but received {t}")
+    if len(y) != len(t): raise ValueError(f"y(len:{N}) and t(len:{len(t)}) must have the same length")
+    t = t - t[0]
+    T = t[-1] * N / (N - 1)
+    f = t * N / T ** 2
+
+    if N > 1:
+        dt = t[1:] - t[:-1]
+        uniform = np.allclose(dt, dt[0], rtol=1e-9, atol=1e-12)
+    else:
+        uniform = True
+
+    if uniform:
+        A = np.fft.fft(y) / N
+    else:
+        x = (2 * np.pi * t)
+        A = np.conj(nufft(x, y, f)) / N
+
+    return Complex(A.real, A.imag), f
+
+
+class fit:
+    def __init__(s, A, n, cir):
+        s.A = A
+        s.n = n
+        s.cir = cir
+
+    def __call__(s, t):
+        if hasattr(t, '__iter__'):
+            return np.array(list(map(s, t)))
+        return Re(sum(s.A[:s.n] * s.cir ** t))
+
+
+@mem.cache
 def build(A: Union[np.ndarray, Complex], f: Optional[np.ndarray] = None, n: int = 0):
     N = len(A)
     if n == 0 or n > N:
         if n > N: warnings.warn(f"Cannot generate {n} terms from a time signal of {N} terms.")
-        n = N
+        return build(A, f, N)
     if f is None:
         f = np.arange(0, 1, 1 / N)
+        return build(A, f, n)
     else:
         if not np.all(f[:-1] < f[1:]): raise ValueError(f"f must be sorted but received {f}")
         if len(A) != len(f): raise ValueError(f"A and f must have the same length")
 
     cir = e ** (i * 2 * pi * f[:n])
-    def fit(t):
-        if hasattr(t, '__iter__'):
-            return np.array(list(map(fit, t)))
-        return Re(sum(A[:n] * cir ** t))
 
-    return fit
+    return fit(A, n, cir)
 
 
 def plot(f, a, b, ax=plt, res=1000):
@@ -51,6 +91,13 @@ def plot(f, a, b, ax=plt, res=1000):
     ax.plot(x, y)
 
 
-@memory.cache
-def transform(y: np.ndarray, t: Optional[np.ndarray] = None, n: int = 0):
-    return build(*coeff(y, t), n)
+def transform(y: np.ndarray, t: Optional[np.ndarray] = None, n: int = 0, dft=False):
+    if dft:
+        return build(*DFT(y, t), n)
+    else:
+        return build(*FFT(y, t), n)
+
+
+@mem.cache
+def sample(f, t):
+    return f(t)
