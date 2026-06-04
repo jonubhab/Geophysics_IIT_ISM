@@ -240,10 +240,12 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
 
 file = open()
 st = ob.read(file)
+print(st)
+print(st[0].stats)
 data = st[0].data
 t = st[0].times()
 
-win = int(input("Window Size: "))
+win = int(input("\nWindow Size: "))
 step = int(input("Step Size: "))
 n_windows = (len(data) - win) // step + 1
 

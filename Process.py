@@ -1,10 +1,15 @@
-import os, subprocess,threading,socket,sys,pickle
-import msnoise.api as ms
-import msnoise.msnoise_table_def as config
+import os
+import pickle
+import socket
+import subprocess
+import sys
+import threading
+import time as T
 import urllib.request
 from datetime import *
-import time as T
 
+import msnoise.api as ms
+import msnoise.msnoise_table_def as config
 
 if len(sys.argv) > 1:
     dir = sys.argv[1]
@@ -217,6 +222,10 @@ if new or info(4):
     run([msn, "new_jobs", "--init"], critical=False)
     update(4,"True")
 else: run([msn, "new_jobs"], critical=False)
+
+if new:
+    run([msn, "config", "set", "plugins=msnoise_tomo"])
+    run([msn, "p", "tomo", "install"])
 
 
 
