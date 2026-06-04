@@ -11,3 +11,6 @@ def freq(y: np.ndarray, t: Optional[np.ndarray] = None):
     plt.plot(F[:1 + int(np.ceil(len(A) / 2)) - len(A) % 2], abs(A)[:1 + int(np.ceil(len(A) / 2)) - len(A) % 2])
     print(abs(A)[:1 + int(np.ceil(len(A) / 2)) - len(A) % 2])
     plt.show()
+
+
+print(sum(i for i in range(5)))

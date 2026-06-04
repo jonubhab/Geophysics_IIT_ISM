@@ -1,15 +1,20 @@
+import os
 import tkinter as tk
 from tkinter import filedialog
 from typing import Optional
+
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import obspy as ob
+from joblib import Memory
 from scipy.ndimage import minimum_filter1d
 from scipy.signal import find_peaks, savgol_filter
-import h5py
-import os
-import Fourier_Transform as ft
 
+import Fourier_Transform as ft
+from Complex import Re
+
+memory = Memory("./fourier_cache", verbose=0)
 
 def open():
     win = tk.Tk()
@@ -33,17 +38,25 @@ def freq(y: np.ndarray, t: Optional[np.ndarray] = None):
 
 
 def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fraction=0.02):
-    '''
     pad = int(len(x) / 10)
-    revx=x[::-1][-pad-1:-1]
-    end=x[1:pad+1]+x[-1]
-    decay=1#np.exp(-10*np.arange(pad)**2)
-    x = np.concatenate((revx, x,end))
-    y = np.concatenate((-np.flip(decay)*y[::-1][-pad-1:-1], y, -decay*y[::-1][1:pad+1]))
-    '''
+    decay = np.exp(-10 * np.arange(pad) ** 2)
+
+    revx = x[::-1][-pad - 1:-1]
+    end = x[1:pad + 1] + x[-1]
+
+    x = np.concatenate((revx, x, end))
+    y = np.concatenate((
+        -np.flip(decay) * y[:pad][::-1],
+        y,
+        -decay * y[-pad:][::-1]
+    ))
+
     high=x[-1]
+    dlen = len(x) - 1
+    '''
     x = np.concatenate((-x[::-1][:-1], x))
     y = np.concatenate((-y[::-1][:-1], y))
+    '''
 
     N = len(y)
 
@@ -124,11 +137,11 @@ def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fracti
                 'peak_x': x[peak_idx],
                 'peak_y': yfil[peak_idx],
                 'start_x': x[start_idx] if 0 < x[start_idx] < high else 0 if 0 < x[start_idx] else 0,
-                'end_x': x[end_idx],
+                'end_x': x[end_idx] if x[end_idx] < high else high,
                 'sigma': sigma,
                 'direction': direction,
-                'si': start_idx,
-                'ei': end_idx
+                'si': start_idx - dlen,
+                'ei': end_idx - dlen
             })
 
 
@@ -144,38 +157,31 @@ def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fracti
     cleaned_curves = sorted(cleaned_curves, key=lambda c: c['start_x'])
     return cleaned_curves
 
+
 def slide(mov):
-    for A,f in mov:
-        #print(type(A))
-        y=abs(A)
-        ranges = scan(f,y)
-
+    for A, f in mov:
+        y = np.log(Re(abs(A)))
+        '''
+        ranges = scan(f, y)
         for ran in ranges:
-            si = max(1, ran["si"])  # Protects against si=0 causing y[-1]
-            ei = min(len(y) - 1, ran["ei"])
-
-            if si > ei:
-                continue
-
-            sub_slice = y[si: ei + 1]
-            if len(sub_slice) == 0:
-                continue
-
-            gt=max(y[si:ei+1])-y[si-1]
-            for i in range(si,ei+1):
-                y[i]=(y[i]-y[si-1])/gt+y[si-1]
-
+            if ran["peak_x"] > 0:
+                si = np.searchsorted(f, ran["start_x"])
+                ei = np.searchsorted(f, ran["end_x"])
+                si = max(1, si)
+                ei = min(len(y) - 1, ei)
+                if si >= ei:
+                    continue
+                sub = y[si:ei+1]
+                if len(sub) == 0:
+                    continue
+                gt = max(sub) - y[si-1]
+                if gt == 0:
+                    continue
+                y[si:ei+1] = (y[si:ei+1] - y[si-1]) / gt + y[si-1]
+                '''
         yield y
 
 def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
-    """
-    Parameters
-    ----------
-    Avf      : generator yielding abs(A) arrays, one per time step
-    t        : time array (length = number of windows)
-    F        : frequency axis (fixed)
-    filename : h5py file to store/load spectrogram data
-    """
     n_windows = len(t)
     n_freq    = len(F)
 
@@ -192,7 +198,10 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
             hf.create_dataset('t', data=t)
             hf.create_dataset('F', data=F)
 
-            for i,amp in enumerate(Avf):
+            for i, amp in enumerate(Avf):
+                if i >= n_windows:
+                    print(f"Warning: generator yielded more than {n_windows} windows, stopping.")
+                    break
                 hf['buffer'][:, i] = amp
                 if i % 100 == 0:
                     print(f"  {i}/{n_windows} windows processed...")
@@ -201,17 +210,25 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
 
     print("Plotting...")
     with h5py.File(filename, 'r') as hf:
-        buffer = hf['buffer'][:]   # load into RAM only at plot time
+        buffer = hf['buffer'][:]
         t_axis = hf['t'][:]
         f_axis = hf['F'][:]
 
+
     plt.figure(figsize=(14, 6))
+    vmin = np.percentile(buffer, 2)
+    vmax = np.percentile(buffer, 98)
+
+
     plt.imshow(
         buffer,
         aspect='auto',
         origin='lower',
         extent=[t_axis[0], t_axis[-1], f_axis[0], f_axis[-1]],
-        cmap='inferno'
+        cmap='inferno',
+        vmin=vmin,
+        vmax=vmax,
+        interpolation='gaussian'
     )
     plt.colorbar(label='Amplitude')
     plt.xlabel('Time (s)')
@@ -220,16 +237,24 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
     plt.tight_layout()
     plt.show()
 
-st = ob.read(open())
-data = st[0].data[::100]
-t = st[0].times()[::100]
 
-window=ft.SWFT(data,360,t,step=1)
-F=next(window)
-Avf=slide(window)
-plot_spectrogram(Avf,t[:-99],F,input("File Name: ")+".h5")
+file = open()
+st = ob.read(file)
+data = st[0].data
+t = st[0].times()
 
+win = int(input("Window Size: "))
+step = int(input("Step Size: "))
+n_windows = (len(data) - win) // step + 1
 
+window = ft.SWFT(data, win, t, step=step)
+F = next(window)
+Avf = slide(window)
+
+plot_spectrogram(Avf, t[:n_windows], F,
+                 str(win) + "_" + str(step) + "_" + os.path.splitext(os.path.basename(file))[0] + ".h5")
+
+'''
 x, y = freq(data, t)
 peaks = scan(x, y)
 i = 0
@@ -238,9 +263,9 @@ for peak in peaks:
         i += 1
         print(f'\nWindow #{i}\n'
               f'Frequency: {peak["peak_x"]} Hz\n'
-              f'Peak Amplitude: {peak["peak_y"]}\n'
+              f'Peak Amplitude: {max(y[peak["si"]:peak["ei"] + 1])}\n'
               f'Range: {peak["start_x"]} Hz to {peak["end_x"]} Hz \n'
               f'Standard Deviation: {peak["sigma"]}\n')
 
 plt.show()
-
+'''

@@ -28,7 +28,6 @@ def DFT(y: np.ndarray, t: Optional[np.ndarray] = None):
     return A, f
 
 
-@mem.cache
 def FFT(y: np.ndarray, t: Optional[np.ndarray] = None):
     N = len(y)
     if t is None:
@@ -64,18 +63,23 @@ def SWFT(y: np.ndarray, win:int, t: Optional[np.ndarray] = None, update:int=0,st
 
     A,f=None,None
     half_len = 1 + int(np.ceil(win / 2)) - win % 2
+    cir = e ** (i * 2 * np.pi * np.arange(half_len) / win)
+    cirs = cir ** step
+    cir_neg_powers = np.array([cir ** (-s) for s in range(step)])
     for j in range(N-win+1):
         if j%update==0:
-            A,f=FFT(y[j:j+win])
+            A, f = FFT(y[j:j + win], t[j:j + win])
             A=A[:half_len]
             f=f[:half_len]
             A=Complex([a.x for a in A],[a.y for a in A])
             if j == 0: yield f
-        else:
-            cir = e**(i * 2 * np.pi * np.arange(len(A)) / win)
-            A = (A - y[j-1] + y[j+win-1]) * cir
-            #A=Complex([a.x for a in A],[a.y for a in A])
-        if j%step==0: yield A,f
+            yield A, f
+        elif j % step == 0:
+            diffs = np.array([y[j + win + s] - y[j + s] for s in range(step)])
+            correction = np.dot(diffs, cir_neg_powers) / win
+            A = (A * cirs) + correction
+            yield A, f
+
 
 
 
