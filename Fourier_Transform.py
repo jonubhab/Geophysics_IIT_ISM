@@ -54,6 +54,30 @@ def FFT(y: np.ndarray, t: Optional[np.ndarray] = None):
 
     return Complex(A.real, A.imag), f
 
+@mem.cache
+def SWFT(y: np.ndarray, win:int, t: Optional[np.ndarray] = None, update:int=0,step=1):
+    if update==0:
+        update=win
+    N = len(y)
+    if t is None:
+        t = np.arange(N)
+
+    A,f=None,None
+    half_len = 1 + int(np.ceil(win / 2)) - win % 2
+    for j in range(N-win+1):
+        if j%update==0:
+            A,f=FFT(y[j:j+win])
+            A=A[:half_len]
+            f=f[:half_len]
+            A=Complex([a.x for a in A],[a.y for a in A])
+            if j == 0: yield f
+        else:
+            cir = e**(i * 2 * np.pi * np.arange(len(A)) / win)
+            A = (A - y[j-1] + y[j+win-1]) * cir
+            #A=Complex([a.x for a in A],[a.y for a in A])
+        if j%step==0: yield A,f
+
+
 
 class fit:
     def __init__(s, A, n, cir):

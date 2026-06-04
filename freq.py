@@ -1,13 +1,13 @@
 import tkinter as tk
 from tkinter import filedialog
 from typing import Optional
-
 import matplotlib.pyplot as plt
 import numpy as np
 import obspy as ob
 from scipy.ndimage import minimum_filter1d
 from scipy.signal import find_peaks, savgol_filter
-
+import h5py
+import os
 import Fourier_Transform as ft
 
 
@@ -33,8 +33,18 @@ def freq(y: np.ndarray, t: Optional[np.ndarray] = None):
 
 
 def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fraction=0.02):
+    '''
+    pad = int(len(x) / 10)
+    revx=x[::-1][-pad-1:-1]
+    end=x[1:pad+1]+x[-1]
+    decay=1#np.exp(-10*np.arange(pad)**2)
+    x = np.concatenate((revx, x,end))
+    y = np.concatenate((-np.flip(decay)*y[::-1][-pad-1:-1], y, -decay*y[::-1][1:pad+1]))
+    '''
+    high=x[-1]
     x = np.concatenate((-x[::-1][:-1], x))
     y = np.concatenate((-y[::-1][:-1], y))
+
     N = len(y)
 
     if len(x) != N:
@@ -70,6 +80,8 @@ def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fracti
         peaks, _ = find_peaks(signal, prominence=min_prominence, distance=wlen // 2)
 
         for peak_idx in peaks:
+
+
             if signal[peak_idx] < min_prominence:
                 continue
 
@@ -93,6 +105,7 @@ def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fracti
                         break
                 end_idx += 1
 
+
             curve_slice_x = x[start_idx: end_idx + 1]
             curve_slice_y = signal[start_idx: end_idx + 1]
 
@@ -110,11 +123,14 @@ def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fracti
             detected_curves.append({
                 'peak_x': x[peak_idx],
                 'peak_y': yfil[peak_idx],
-                'start_x': x[start_idx] if x[start_idx] > 0 else 0,
+                'start_x': x[start_idx] if 0 < x[start_idx] < high else 0 if 0 < x[start_idx] else 0,
                 'end_x': x[end_idx],
                 'sigma': sigma,
-                'direction': direction
+                'direction': direction,
+                'si': start_idx,
+                'ei': end_idx
             })
+
 
     cleaned_curves = []
     for curve in sorted(detected_curves, key=lambda c: abs(c['peak_y'] - np.median(y)), reverse=True):
@@ -128,14 +144,94 @@ def scan(x, y, noise_multiplier=4.0, min_height_fraction=0.008, smoothing_fracti
     cleaned_curves = sorted(cleaned_curves, key=lambda c: c['start_x'])
     return cleaned_curves
 
+def slide(mov):
+    for A,f in mov:
+        #print(type(A))
+        y=abs(A)
+        ranges = scan(f,y)
+
+        for ran in ranges:
+            si = max(1, ran["si"])  # Protects against si=0 causing y[-1]
+            ei = min(len(y) - 1, ran["ei"])
+
+            if si > ei:
+                continue
+
+            sub_slice = y[si: ei + 1]
+            if len(sub_slice) == 0:
+                continue
+
+            gt=max(y[si:ei+1])-y[si-1]
+            for i in range(si,ei+1):
+                y[i]=(y[i]-y[si-1])/gt+y[si-1]
+
+        yield y
+
+def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
+    """
+    Parameters
+    ----------
+    Avf      : generator yielding abs(A) arrays, one per time step
+    t        : time array (length = number of windows)
+    F        : frequency axis (fixed)
+    filename : h5py file to store/load spectrogram data
+    """
+    n_windows = len(t)
+    n_freq    = len(F)
+
+    if not os.path.exists("freq_cache"): os.makedirs("freq_cache")
+
+    filename=os.path.join("freq_cache",filename)
+
+    if os.path.exists(filename):
+        print(f"Found existing file '{filename}', skipping streaming.")
+    else:
+        print(f"Streaming data into '{filename}'...")
+        with h5py.File(filename, 'w') as hf:
+            hf.create_dataset('buffer', shape=(n_freq, n_windows), dtype='float32')
+            hf.create_dataset('t', data=t)
+            hf.create_dataset('F', data=F)
+
+            for i,amp in enumerate(Avf):
+                hf['buffer'][:, i] = amp
+                if i % 100 == 0:
+                    print(f"  {i}/{n_windows} windows processed...")
+
+        print("Streaming complete.")
+
+    print("Plotting...")
+    with h5py.File(filename, 'r') as hf:
+        buffer = hf['buffer'][:]   # load into RAM only at plot time
+        t_axis = hf['t'][:]
+        f_axis = hf['F'][:]
+
+    plt.figure(figsize=(14, 6))
+    plt.imshow(
+        buffer,
+        aspect='auto',
+        origin='lower',
+        extent=[t_axis[0], t_axis[-1], f_axis[0], f_axis[-1]],
+        cmap='inferno'
+    )
+    plt.colorbar(label='Amplitude')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Frequency (Hz)')
+    plt.title('Spectrogram')
+    plt.tight_layout()
+    plt.show()
 
 st = ob.read(open())
-data = st[0].data
-t = st[0].times()
+data = st[0].data[::100]
+t = st[0].times()[::100]
+
+window=ft.SWFT(data,360,t,step=1)
+F=next(window)
+Avf=slide(window)
+plot_spectrogram(Avf,t[:-99],F,input("File Name: ")+".h5")
+
+
 x, y = freq(data, t)
-
 peaks = scan(x, y)
-
 i = 0
 for peak in peaks:
     if peak["peak_x"] > 0:
@@ -147,3 +243,4 @@ for peak in peaks:
               f'Standard Deviation: {peak["sigma"]}\n')
 
 plt.show()
+
