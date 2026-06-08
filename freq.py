@@ -279,13 +279,13 @@ if freq:
 
     N = len(data)
     T = t[-1] * N / (N - 1)
-    print(f"Frequency Limit: {N / T} Hz")
+    print(f"\nFrequency Limit: {N / T} Hz")
     print(f"Time Limit: {T} s")
-    win = int(input("\nWindow Size: "))
+    win = int(input("Window Size: "))
     step = int(input("Step Size: "))
     print(f"Frequency Resolution: {N / T / t[win]} Hz")
     print(f"Time Resolution: {T / N * step} s")
-    time.sleep(1)
+    time.sleep(2)
     n_windows = (len(data) - win) // step + 1
 
     window = ft.SWFT(data, win, t, step=step)
