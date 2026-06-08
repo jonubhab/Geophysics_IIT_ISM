@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Optimized 3D Slice Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: transparent;
+            font-family: var(--font-sans, sans-serif);
+        }
+
+        #app {
+            display: flex;
+            width: 100%;
+            height: 600px;
+            gap: 8px;
+            padding: 8px;
+            background: #1b1b1f;
+            border-radius: 12px;
+        }
+
+        #left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #111217;
+            border: 0.5px solid #2c2f36;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #left-header {
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #aeb4bf;
+            border-bottom: 0.5px solid #2c2f36;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #canvas2d {
+            flex: 1;
+            width: 100%;
+            display: block;
+        }
+
+        #right-panel {
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #panel-3d {
+            flex: 1;
+            background: #111217;
+            border: 0.5px solid #2c2f36;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            min-height: 240px;
+        }
+
+        #panel-3d canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+        }
+
+        #panel-3d-label {
+            position: absolute;
+            top: 6px;
+            left: 10px;
+            font-size: 11px;
+            color: #aeb4bf;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        #controls-panel {
+            background: #111217;
+            border: 0.5px solid #2c2f36;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .ctrl-label {
+            font-size: 11px;
+            color: #aeb4bf;
+            margin-bottom: 2px;
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .slider-row input[type=range] {
+            flex: 1;
+        }
+
+        .slider-val {
+            font-size: 11px;
+            color: #e5e7eb;
+            min-width: 34px;
+            text-align: right;
+        }
+
+        #update-2d {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #4b5563;
+            background: #232833;
+            color: #e5e7eb;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #update-2d:hover {
+            background: #2c3340;
+        }
+
+        #joystick-area {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #joystick-wrap {
+            position: relative;
+            width: 100px;
+            height: 100px;
+        }
+
+        #joystick-outer {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: #1b1f26;
+            border: 1.5px solid #4b5563;
+            position: absolute;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        #joystick-inner-ring {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: #232833;
+            border: 1.5px solid #8b949e;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+        }
+
+        #joystick-knob {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #aeb4bf;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .joy-legend {
+            font-size: 10px;
+            color: #aeb4bf;
+            line-height: 1.5;
+        }
+
+        .joy-legend span {
+            display: block;
+        }
+
+        #colorbar-canvas {
+            width: 100%;
+            height: 14px;
+            border-radius: 3px;
+            display: block;
+        }
+
+        .cbar-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #aeb4bf;
+            margin-top: 2px;
+        }
+
+        #status {
+            font-size: 11px;
+            color: #aeb4bf;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div id="left-panel">
+        <div id="left-header"><span>cross section</span><span id="slice-info"></span></div>
+        <canvas id="canvas2d"></canvas>
+    </div>
+    <div id="right-panel">
+        <div id="panel-3d">
+            <div id="panel-3d-label">3d orientation</div>
+        </div>
+        <div id="controls-panel">
+            <div>
+                <div class="ctrl-label">slicer position</div>
+                <div class="slider-row"><input id="sl-pos" max="100" min="0" step="1" type="range" value="50"><span
+                        class="slider-val" id="sl-pos-val">50%</span></div>
+            </div>
+            <div>
+                <div class="ctrl-label">slice thickness (grid units)</div>
+                <div class="slider-row"><input id="sl-thick" max="5" min="0" step="0.5" type="range" value="1"><span
+                        class="slider-val" id="sl-thick-val">1.0</span></div>
+            </div>
+            <button id="update-2d">Update 2D Map</button>
+            <div id="joystick-area">
+                <div id="joystick-wrap">
+                    <div id="joystick-outer"></div>
+                    <div id="joystick-inner-ring"></div>
+                    <div id="joystick-knob"></div>
+                </div>
+                <div class="joy-legend">
+                    <span style="color:#e5e7eb;font-size:11px;">joystick</span>
+                    <span>inner ring: rotate plane</span>
+                    <span>outer ring: orbit camera</span>
+                </div>
+            </div>
+            <div>
+                <canvas height="14" id="colorbar-canvas"></canvas>
+                <div class="cbar-row"><span id="cbar-min">—</span><span>inferno</span><span id="cbar-max">—</span></div>
+            </div>
+            <div id="status">loading data.txt...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const DATA_FILE = 'data.txt';
+    let pts = [], xMin, xMax, yMin, yMax, zMin, zMax, vMin, vMax;
+    let scene, camera, renderer, pointCloud, planeMesh;
+    let camTheta = Math.PI / 4, camPhi = Math.PI / 3;
+    let planeRotX = 0, planeRotY = 0;
+    const slicePlane = {normal: new THREE.Vector3(1, 0, 0), t: 0.5, thickness: 1.0};
+
+    const panel3d = document.getElementById('panel-3d');
+    const canvas2d = document.getElementById('canvas2d');
+    const ctx2d = canvas2d.getContext('2d');
+    const cbCanvas = document.getElementById('colorbar-canvas');
+    const statusEl = document.getElementById('status');
+    const slPos = document.getElementById('sl-pos');
+    const slThick = document.getElementById('sl-thick');
+    const slPosVal = document.getElementById('sl-pos-val');
+    const slThickVal = document.getElementById('sl-thick-val');
+    const sliceInfo = document.getElementById('slice-info');
+    const joyWrap = document.getElementById('joystick-wrap');
+    const joyKnob = document.getElementById('joystick-knob');
+    const updateBtn = document.getElementById('update-2d');
+
+    let joystickActive = false;
+    let joystickZone = null;
+    let jCenter = {x: 0, y: 0};
+    let sceneReady = false;
+    let cachedSlice = null;
+    let canvasDirty = true;
+
+    const workScale = 0.45;
+    let off = document.createElement('canvas');
+    let offCtx = off.getContext('2d');
+
+    function inferno(t) {
+        t = Math.max(0, Math.min(1, t));
+        const c = [[0, 0, 4], [1, 0, 7], [7, 0, 17], [20, 2, 38], [40, 5, 69], [64, 12, 103], [87, 19, 131], [108, 25, 147], [131, 35, 155], [152, 45, 163], [174, 61, 168], [195, 77, 170], [215, 96, 168], [232, 116, 165], [244, 137, 159], [251, 161, 152], [254, 183, 143], [253, 206, 129], [249, 228, 112], [245, 249, 92], [252, 255, 164]];
+        const i = t * (c.length - 1), lo = Math.floor(i), hi = Math.min(lo + 1, c.length - 1), f = i - lo;
+        return [Math.round(c[lo][0] * (1 - f) + c[hi][0] * f), Math.round(c[lo][1] * (1 - f) + c[hi][1] * f), Math.round(c[lo][2] * (1 - f) + c[hi][2] * f)];
+    }
+
+    function valToRGB(v, alpha = 1) {
+        if (isNaN(v)) return [120, 120, 120, alpha * 0.5];
+        const t = (v - vMin) / (vMax - vMin || 1);
+        const [r, g, b] = inferno(t);
+        return [r, g, b, alpha];
+    }
+
+    function parseDataText(txt) {
+        txt = txt.replace(/\bNaN\b/g, 'null').replace(/\bnan\b/g, 'null').replace(/\bNone\b/g, 'null');
+        return JSON.parse(txt).map(r => ({x: +r[0], y: +r[1], z: +r[2], v: (r[3] === null ? NaN : +r[3])}));
+    }
+
+    function normCoord(p) {
+        return new THREE.Vector3(
+            (p.x - xMin) / ((xMax - xMin) || 1) - 0.5,
+            (p.y - yMin) / ((yMax - yMin) || 1) - 0.5,
+            (p.z - zMin) / ((zMax - zMin) || 1) - 0.5
+        );
+    }
+
+    function updateCamera() {
+        const r = 2.8;
+        camera.position.set(
+            r * Math.sin(camPhi) * Math.cos(camTheta),
+            r * Math.cos(camPhi),
+            r * Math.sin(camPhi) * Math.sin(camTheta)
+        );
+        camera.lookAt(0, 0, 0);
+    }
+
+    function updatePlaneMesh() {
+        const n = slicePlane.normal.clone().normalize();
+        const t = slicePlane.t - 0.5;
+        planeMesh.position.copy(n.clone().multiplyScalar(t));
+        planeMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    }
+
+    function signedDistance(p, n, d) {
+        return p.dot(n) - d;
+    }
+
+    function projectToPlane(p3, n) {
+        const u = Math.abs(n.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+        u.sub(n.clone().multiplyScalar(u.dot(n))).normalize();
+        const v = n.clone().cross(u).normalize();
+        return {u: p3.dot(u), v: p3.dot(v)};
+    }
+
+    function drawColorbar() {
+        const ctx = cbCanvas.getContext('2d');
+        const w = Math.max(260, cbCanvas.clientWidth || 260), h = 14;
+        cbCanvas.width = w;
+        cbCanvas.height = h;
+        for (let i = 0; i < w; i++) {
+            const [r, g, b] = inferno(i / (w - 1));
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(i, 0, 1, h);
+        }
+        document.getElementById('cbar-min').textContent = vMin.toFixed(3);
+        document.getElementById('cbar-max').textContent = vMax.toFixed(3);
+    }
+
+    function buildScene() {
+        scene = new THREE.Scene();
+        renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+        renderer.setClearColor(0x000000, 0);
+        panel3d.innerHTML = '<div id="panel-3d-label">3d orientation</div>';
+        panel3d.appendChild(renderer.domElement);
+        camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
+        updateCamera();
+
+        const boxEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+        scene.add(new THREE.LineSegments(
+            boxEdges,
+            new THREE.LineBasicMaterial({color: 0x9ca3af, transparent: true, opacity: 0.45})
+        ));
+
+        const axes = new THREE.AxesHelper(0.7);
+        axes.position.set(-0.5, -0.5, -0.5);
+        scene.add(axes);
+
+        const validPts = pts.filter(p => !isNaN(p.v));
+        const pcPositions = new Float32Array(validPts.length * 3);
+        const pcColors = new Float32Array(validPts.length * 3);
+
+        validPts.forEach((p, i) => {
+            const v = normCoord(p);
+            pcPositions[i * 3] = v.x;
+            pcPositions[i * 3 + 1] = v.y;
+            pcPositions[i * 3 + 2] = v.z;
+            const [r, g, b] = valToRGB(p.v);
+            pcColors[i * 3] = r / 255;
+            pcColors[i * 3 + 1] = g / 255;
+            pcColors[i * 3 + 2] = b / 255;
+        });
+
+        const pcGeo = new THREE.BufferGeometry();
+        pcGeo.setAttribute('position', new THREE.BufferAttribute(pcPositions, 3));
+        pcGeo.setAttribute('color', new THREE.BufferAttribute(pcColors, 3));
+        pointCloud = new THREE.Points(
+            pcGeo,
+            new THREE.PointsMaterial({size: 0.035, vertexColors: true, transparent: true, opacity: 0.9})
+        );
+        scene.add(pointCloud);
+
+        const planeGeo = new THREE.PlaneGeometry(1.25, 1.25);
+        planeMesh = new THREE.Mesh(
+            planeGeo,
+            new THREE.MeshBasicMaterial({color: 0x88aaff, transparent: true, opacity: 0.18, side: THREE.DoubleSide})
+        );
+        planeMesh.add(new THREE.LineSegments(
+            new THREE.EdgesGeometry(planeGeo),
+            new THREE.LineBasicMaterial({color: 0x5e8cff, transparent: true, opacity: 0.8})
+        ));
+        scene.add(planeMesh);
+        updatePlaneMesh();
+    }
+
+    function resizeAll() {
+        const lp = document.getElementById('left-panel');
+        canvas2d.width = lp.clientWidth;
+        canvas2d.height = lp.clientHeight - 28;
+        off.width = Math.max(1, Math.floor(canvas2d.width * workScale));
+        off.height = Math.max(1, Math.floor(canvas2d.height * workScale));
+        const w = panel3d.clientWidth || 280;
+        const h = panel3d.clientHeight || 240;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        canvasDirty = true;
+        renderCanvas();
+    }
+
+    function computeSlice() {
+        const n = slicePlane.normal.clone().normalize();
+        const d = slicePlane.t - 0.5;
+        const half = slicePlane.thickness / 2;
+        const slicePts = pts.map(p => ({p, v3: normCoord(p)}))
+            .filter(o => Math.abs(signedDistance(o.v3, n, d)) <= half);
+        if (slicePts.length < 2) return null;
+
+        const proj = slicePts.map(o => {
+            const uv = projectToPlane(o.v3, n);
+            return {u: uv.u, v: uv.v, val: o.p.v};
+        });
+
+        let uMin = Infinity, uMax = -Infinity, vMin2 = Infinity, vMax2 = -Infinity;
+        for (const p of proj) {
+            uMin = Math.min(uMin, p.u);
+            uMax = Math.max(uMax, p.u);
+            vMin2 = Math.min(vMin2, p.v);
+            vMax2 = Math.max(vMax2, p.v);
+        }
+        return {n, proj, uMin, uMax, vMin2, vMax2};
+    }
+
+    function renderSliceToOffscreen() {
+        if (!cachedSlice) return;
+        const W = off.width, H = off.height;
+        const {n, proj, uMin, uMax, vMin2, vMax2} = cachedSlice;
+        const uRange = uMax - uMin || 1;
+        const vRange = vMax2 - vMin2 || 1;
+        const pad = 4;
+
+        const img = offCtx.createImageData(W, H);
+        const data = img.data;
+
+        for (let py = 0; py < H; py++) {
+            const pv = vMin2 + (H - py - 1) / (H - 1 || 1) * vRange;
+            for (let px = 0; px < W; px++) {
+                const pu = uMin + px / (W - 1 || 1) * uRange;
+                let wSum = 0, valSum = 0, nanW = 0;
+                for (let i = 0; i < proj.length; i++) {
+                    const dx = proj[i].u - pu;
+                    const dy = proj[i].v - pv;
+                    const dist2 = dx * dx + dy * dy;
+                    if (dist2 > 0.18) continue;
+                    const w = 1 / (dist2 + 1e-5);
+                    wSum += w;
+                    if (isNaN(proj[i].val)) nanW += w;
+                    else valSum += proj[i].val * w;
+                }
+                const idx = (py * W + px) * 4;
+                if (wSum === 0) {
+                    data[idx] = 30;
+                    data[idx + 1] = 30;
+                    data[idx + 2] = 36;
+                    data[idx + 3] = 255;
+                } else {
+                    const validW = Math.max(1e-12, wSum - nanW);
+                    const interpVal = valSum / validW;
+                    const nanRatio = Math.max(0, Math.min(1, nanW / wSum));
+                    const [r, g, b] = valToRGB(interpVal);
+                    const mix = nanRatio * 0.7;
+                    data[idx] = Math.round(r * (1 - mix) + 120 * mix);
+                    data[idx + 1] = Math.round(g * (1 - mix) + 120 * mix);
+                    data[idx + 2] = Math.round(b * (1 - mix) + 120 * mix);
+                    data[idx + 3] = 255;
+                }
+            }
+        }
+
+        offCtx.putImageData(img, 0, 0);
+
+        ctx2d.save();
+        ctx2d.imageSmoothingEnabled = true;
+        ctx2d.clearRect(0, 0, canvas2d.width, canvas2d.height);
+        ctx2d.drawImage(off, 0, 0, canvas2d.width, canvas2d.height);
+
+        const padMain = 34;
+        const uRange = uMax - uMin || 1;
+        const vRange = vMax2 - vMin2 || 1;
+        const toX = u => padMain + (u - uMin) / uRange * (canvas2d.width - 2 * padMain);
+        const toY = v => canvas2d.height - padMain - (v - vMin2) / vRange * (canvas2d.height - 2 * padMain);
+
+        ctx2d.lineWidth = 1;
+        ctx2d.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx2d.strokeRect(padMain, padMain, canvas2d.width - 2 * padMain, canvas2d.height - 2 * padMain);
+
+        for (const p of proj) {
+            if (isNaN(p.val)) continue;
+            const [r, g, b] = valToRGB(p.val);
+            ctx2d.beginPath();
+            ctx2d.arc(toX(p.u), toY(p.v), 4, 0, Math.PI * 2);
+            ctx2d.fillStyle = `rgb(${r},${g},${b})`;
+            ctx2d.fill();
+            ctx2d.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx2d.stroke();
+        }
+
+        ctx2d.fillStyle = '#aeb4bf';
+        ctx2d.font = '10px sans-serif';
+        ctx2d.textAlign = 'left';
+        ctx2d.fillText(`n=(${n.x.toFixed(2)}, ${n.y.toFixed(2)}, ${n.z.toFixed(2)})`, 6, canvas2d.height - 6);
+        ctx2d.restore();
+
+        sliceInfo.textContent = `| ${proj.length} pts | t=${slicePlane.t.toFixed(2)}`;
+        canvasDirty = false;
+    }
+
+    function renderCanvas() {
+        if (!sceneReady) return;
+        if (canvasDirty) renderSliceToOffscreen();
+        else {
+            ctx2d.clearRect(0, 0, canvas2d.width, canvas2d.height);
+            ctx2d.fillStyle = '#aeb4bf';
+            ctx2d.font = '13px sans-serif';
+            ctx2d.textAlign = 'center';
+            ctx2d.fillText('Click Update 2D Map', canvas2d.width / 2, canvas2d.height / 2);
+        }
+    }
+
+    function updateSliceStateFromUI() {
+        slicePlane.t = slPos.value / 100;
+        slicePlane.thickness = parseFloat(slThick.value);
+        updatePlaneMesh();
+        canvasDirty = false;
+        renderCanvas();
+    }
+
+    function loadData() {
+        fetch(DATA_FILE)
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.text();
+            })
+            .then(txt => {
+                pts = parseDataText(txt);
+                xMin = Math.min(...pts.map(p => p.x));
+                xMax = Math.max(...pts.map(p => p.x));
+                yMin = Math.min(...pts.map(p => p.y));
+                yMax = Math.max(...pts.map(p => p.y));
+                zMin = Math.min(...pts.map(p => p.z));
+                zMax = Math.max(...pts.map(p => p.z));
+                const vals = pts.filter(p => !isNaN(p.v)).map(p => p.v);
+                vMin = Math.min(...vals);
+                vMax = Math.max(...vals);
+                drawColorbar();
+                buildScene();
+                resizeAll();
+                sceneReady = true;
+                statusEl.textContent = `loaded ${pts.length} points`;
+                canvasDirty = true;
+                renderCanvas();
+            })
+            .catch(err => {
+                statusEl.textContent = `failed to load data.txt (${err.message})`;
+                console.error(err);
+            });
+    }
+
+    slPos.addEventListener('input', () => {
+        slPosVal.textContent = `${slPos.value}%`;
+        slicePlane.t = slPos.value / 100;
+        updatePlaneMesh();
+    });
+
+    slThick.addEventListener('input', () => {
+        slicePlane.thickness = parseFloat(slThick.value);
+        slThickVal.textContent = slicePlane.thickness.toFixed(1);
+    });
+
+    updateBtn.addEventListener('click', () => {
+        cachedSlice = computeSlice();
+        canvasDirty = true;
+        renderCanvas();
+    });
+
+    function joyCenter() {
+        const r = joyWrap.getBoundingClientRect();
+        return {x: r.left + r.width / 2, y: r.top + r.height / 2};
+    }
+
+    joyWrap.addEventListener('mousedown', e => {
+        joystickActive = true;
+        jCenter = joyCenter();
+        const dx = e.clientX - jCenter.x, dy = e.clientY - jCenter.y;
+        joystickZone = Math.sqrt(dx * dx + dy * dy) < 32 ? 'inner' : 'outer';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!joystickActive) return;
+        const dx = e.clientX - jCenter.x, dy = e.clientY - jCenter.y;
+        const maxR = 40;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const cx = dx / Math.max(dist, maxR) * Math.min(dist, maxR);
+        const cy = dy / Math.max(dist, maxR) * Math.min(dist, maxR);
+        joyKnob.style.transform = `translate(calc(-50% + ${cx}px), calc(-50% + ${cy}px))`;
+        const speed = 0.016;
+        const nx = (dx / maxR) * speed;
+        const ny = (dy / maxR) * speed;
+        if (joystickZone === 'outer') {
+            camTheta += nx;
+            camPhi = Math.max(0.12, Math.min(Math.PI - 0.12, camPhi + ny));
+            updateCamera();
+        } else {
+            planeRotX += ny * 1.5;
+            planeRotY += nx * 1.5;
+            const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), planeRotY);
+            const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), planeRotX);
+            slicePlane.normal.copy(new THREE.Vector3(1, 0, 0).applyQuaternion(qx).applyQuaternion(qy).normalize());
+            updatePlaneMesh();
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!joystickActive) return;
+        joystickActive = false;
+        joystickZone = null;
+        joyKnob.style.transform = 'translate(-50%, -50%)';
+    });
+
+    joyWrap.addEventListener('touchstart', e => {
+        joystickActive = true;
+        jCenter = joyCenter();
+        const t = e.touches[0];
+        const dx = t.clientX - jCenter.x, dy = t.clientY - jCenter.y;
+        joystickZone = Math.sqrt(dx * dx + dy * dy) < 32 ? 'inner' : 'outer';
+        e.preventDefault();
+    }, {passive: false});
+
+    document.addEventListener('touchmove', e => {
+        if (!joystickActive) return;
+        const t = e.touches[0];
+        const dx = t.clientX - jCenter.x, dy = t.clientY - jCenter.y;
+        const maxR = 40;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const cx = dx / Math.max(dist, maxR) * Math.min(dist, maxR);
+        const cy = dy / Math.max(dist, maxR) * Math.min(dist, maxR);
+        joyKnob.style.transform = `translate(calc(-50% + ${cx}px), calc(-50% + ${cy}px))`;
+        const speed = 0.016;
+        const nx = (dx / maxR) * speed;
+        const ny = (dy / maxR) * speed;
+        if (joystickZone === 'outer') {
+            camTheta += nx;
+            camPhi = Math.max(0.12, Math.min(Math.PI - 0.12, camPhi + ny));
+            updateCamera();
+        } else {
+            planeRotX += ny * 1.5;
+            planeRotY += nx * 1.5;
+            const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), planeRotY);
+            const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), planeRotX);
+            slicePlane.normal.copy(new THREE.Vector3(1, 0, 0).applyQuaternion(qx).applyQuaternion(qy).normalize());
+            updatePlaneMesh();
+        }
+    }, {passive: false});
+
+    document.addEventListener('touchend', () => {
+        joystickActive = false;
+        joystickZone = null;
+        joyKnob.style.transform = 'translate(-50%, -50%)';
+    });
+
+    window.addEventListener('resize', resizeAll);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (sceneReady) renderer.render(scene, camera);
+    }
+
+    animate();
+
+    loadData();
+</script>
+</body>
+</html>
