@@ -1,3 +1,4 @@
+import argparse
 import os
 import tkinter as tk
 from tkinter import filedialog
@@ -7,30 +8,53 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import obspy as ob
-from joblib import Memory
 from scipy.ndimage import minimum_filter1d
 from scipy.signal import find_peaks, savgol_filter
 
 import Fourier_Transform as ft
 from Complex import Re
 
-memory = Memory("./fourier_cache", verbose=0)
 
-def open():
-    win = tk.Tk()
-    win.withdraw()
-    win.attributes('-topmost', True)
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Visualize seismic data.")
 
-    path = filedialog.askopenfilename(
-        title="Select a File",
-        filetypes=[("MSEED Files", "*.MSEED"), ("All Files", "*.*")]
+    parser.add_argument(
+        "file_path",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Path to the input file (optional)"
     )
 
-    win.destroy()
+    parser.add_argument("--info", action="store_true", help="Display only header")
+    parser.add_argument("--freq", action="store_true", help="Visualize data in frequency domain")
+    parser.add_argument("--time", action="store_true", help="Visualize data in time domain")
+
+    return parser.parse_args()
+
+
+args = parse_arguments()
+
+def open():
+    if args.file_path is not None:
+        path = args.file_path
+    else:
+        win = tk.Tk()
+        win.withdraw()
+        win.attributes('-topmost', True)
+
+        path = filedialog.askopenfilename(
+            title="Select a File",
+            filetypes=[("Data Files", ["*.MSEED", "*.SAC"]), ("All Files", "*.*")]
+        )
+
+        win.destroy()
+
+    print(f"File selected: {path}")
     return path
 
 
-def freq(y: np.ndarray, t: Optional[np.ndarray] = None):
+def freqfun(y: np.ndarray, t: Optional[np.ndarray] = None):
     A, F = ft.FFT(y, t)
     plt.plot(F[:1 + int(np.ceil(len(A) / 2)) - len(A) % 2], abs(A)[:1 + int(np.ceil(len(A) / 2)) - len(A) % 2])
     print(abs(A)[:1 + int(np.ceil(len(A) / 2)) - len(A) % 2])
@@ -185,9 +209,11 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
     n_windows = len(t)
     n_freq    = len(F)
 
-    if not os.path.exists("freq_cache"): os.makedirs("freq_cache")
+    cache = "/home/arjun/Anubhab Sen/PyCharm/Geophysics_IIT_ISM/freq_cache"
 
-    filename=os.path.join("freq_cache",filename)
+    if not os.path.exists(cache): os.makedirs(cache)
+
+    filename = os.path.join(cache, filename)
 
     if os.path.exists(filename):
         print(f"Found existing file '{filename}', skipping streaming.")
@@ -209,6 +235,7 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
         print("Streaming complete.")
 
     print("Plotting...")
+
     with h5py.File(filename, 'r') as hf:
         buffer = hf['buffer'][:]
         t_axis = hf['t'][:]
@@ -230,44 +257,83 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
         vmax=vmax,
         interpolation='gaussian'
     )
-    plt.colorbar(label='Amplitude')
+    plt.colorbar(label='Amplitude (Log Scale)')
     plt.xlabel('Time (s)')
     plt.ylabel('Frequency (Hz)')
-    plt.title('Spectrogram')
+    plt.title(os.path.splitext(os.path.basename(filename))[0])
     plt.tight_layout()
-    plt.show()
+
+    '''fig, ax = plt.subplots(2, 1, figsize=(14, 10))
+
+    with h5py.File(filename, 'r') as hf:
+        buffer = hf['buffer'][:]
+        t_axis = hf['t'][:]
+        f_axis = hf['F'][:]
+
+    vmin = np.percentile(buffer, 2)
+    vmax = np.percentile(buffer, 98)
+
+    # 2. Plot the Spectrogram/Imshow on the first subplot (ax[0])
+    img = ax[0].imshow(
+        buffer,
+        aspect='auto',
+        origin='lower',
+        extent=[t_axis[0], t_axis[-1], f_axis[0], f_axis[-1]],
+        cmap='inferno',
+        vmin=vmin,
+        vmax=vmax,
+        interpolation='gaussian'
+    )
+
+    # FIXES FOR AX[0] LABELS & COLORBAR:
+    # In object-oriented style, we use 'set_xlabel', 'set_ylabel', and 'set_title'
+    fig.colorbar(img, ax=ax[0], label='Amplitude (Log Scale)')
+    ax[0].set_xlabel('Time (s)')
+    ax[0].set_ylabel('Frequency (Hz)')
+    ax[0].set_title(os.path.splitext(os.path.basename(filename))[0])
+
+    trace = st[0]
+
+    # Generate the time axis based on sampling rate and number of points
+    trace_time = np.linspace(0, trace.stats.npts / trace.stats.sampling_rate, trace.stats.npts)
+    trace_data = trace.data
+
+    # Plot natively on ax[1]
+    ax[1].plot(trace_time, trace_data, color='black', linewidth=0.5)
+    ax[1].set_xlim(trace_time[0], trace_time[-1])
+    ax[1].set_xlabel('Time (s)')
+    ax[1].set_ylabel('Velocity / Counts')  # Adjust units as necessary
+    ax[1].grid(True, linestyle='--', alpha=0.5)
+
+    # 3. Global layout adjustments and rendering
+    plt.tight_layout()
+    plt.show()'''
+
 
 
 file = open()
 st = ob.read(file)
+
 print(st)
 print(st[0].stats)
-data = st[0].data
-t = st[0].times()
 
-win = int(input("\nWindow Size: "))
-step = int(input("Step Size: "))
-n_windows = (len(data) - win) // step + 1
+freq = args.freq or not (args.info or args.time)
+if freq:
+    data = st[0].data
+    t = st[0].times()
 
-window = ft.SWFT(data, win, t, step=step)
-F = next(window)
-Avf = slide(window)
+    win = int(input("\nWindow Size: "))
+    step = int(input("Step Size: "))
+    n_windows = (len(data) - win) // step + 1
 
-plot_spectrogram(Avf, t[:n_windows], F,
-                 str(win) + "_" + str(step) + "_" + os.path.splitext(os.path.basename(file))[0] + ".h5")
+    window = ft.SWFT(data, win, t, step=step)
+    F = next(window)
+    Avf = slide(window)
 
-'''
-x, y = freq(data, t)
-peaks = scan(x, y)
-i = 0
-for peak in peaks:
-    if peak["peak_x"] > 0:
-        i += 1
-        print(f'\nWindow #{i}\n'
-              f'Frequency: {peak["peak_x"]} Hz\n'
-              f'Peak Amplitude: {max(y[peak["si"]:peak["ei"] + 1])}\n'
-              f'Range: {peak["start_x"]} Hz to {peak["end_x"]} Hz \n'
-              f'Standard Deviation: {peak["sigma"]}\n')
+    plot_spectrogram(Avf, t[:n_windows], F,
+                     str(win) + "_" + str(step) + "_" + os.path.splitext(os.path.basename(file))[0] + ".h5")
 
-plt.show()
-'''
+if args.time or not (args.info or args.freq):
+    st.plot()  # show=False)
+
+if freq: plt.show()

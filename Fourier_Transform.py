@@ -75,7 +75,7 @@ def SWFT(y: np.ndarray, win:int, t: Optional[np.ndarray] = None, update:int=0,st
             if j == 0: yield f
             yield A, f
         elif j % step == 0:
-            diffs = np.array([y[j + win + s] - y[j + s] for s in range(step)])
+            diffs = np.array([y[j + win + s - 1] - y[j + s - 1] for s in range(step)])
             correction = np.dot(diffs, cir_neg_powers) / win
             A = (A * cirs) + correction
             yield A, f

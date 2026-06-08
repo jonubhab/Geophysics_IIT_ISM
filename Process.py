@@ -183,7 +183,7 @@ def populate(data_folder):
         if os.path.commonpath([di, "{ctrl}"]) != "{ctrl}" and os.path.isdir(di) and has_mseed(di) and  "All" not in di:                 
             sta = st(di)
             if i_net!=0: net = nt(di)
-            stationdict[net+"_"+sta]=[net,sta,*coords[net+"_"+sta],'UTM','N/A'] #Adding station details in a dictionary
+            stationdict[net+"_"+sta]=[net,sta,*coords[net+"_"+sta],'DEG','N/A'] #Adding station details in a dictionary
     return stationdict
 """
 
@@ -269,7 +269,8 @@ try:
     t.start()
     if wait_for_server(port,5):
         subprocess.Popen(["firefox", f"http://localhost:{port}"])
-    subprocess.Popen(["gnome-terminal", "--working-directory", ctrl, "--", "bash", "-i", "-c","conda activate msnoise_new; exec bash"])
+    subprocess.Popen(
+        ["gnome-terminal", "--working-directory", ctrl, "--", "bash", "-i", "-c", "conda activate msnoise; exec bash"])
     t.join()
 except KeyboardInterrupt:
     print("\nWeb Admin engine stopped.")
