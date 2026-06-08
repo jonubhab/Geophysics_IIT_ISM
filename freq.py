@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 import tkinter as tk
 from tkinter import filedialog
 from typing import Optional
@@ -263,52 +264,6 @@ def plot_spectrogram(Avf, t, F, filename='spectrogram.h5'):
     plt.title(os.path.splitext(os.path.basename(filename))[0])
     plt.tight_layout()
 
-    '''fig, ax = plt.subplots(2, 1, figsize=(14, 10))
-
-    with h5py.File(filename, 'r') as hf:
-        buffer = hf['buffer'][:]
-        t_axis = hf['t'][:]
-        f_axis = hf['F'][:]
-
-    vmin = np.percentile(buffer, 2)
-    vmax = np.percentile(buffer, 98)
-
-    # 2. Plot the Spectrogram/Imshow on the first subplot (ax[0])
-    img = ax[0].imshow(
-        buffer,
-        aspect='auto',
-        origin='lower',
-        extent=[t_axis[0], t_axis[-1], f_axis[0], f_axis[-1]],
-        cmap='inferno',
-        vmin=vmin,
-        vmax=vmax,
-        interpolation='gaussian'
-    )
-
-    # FIXES FOR AX[0] LABELS & COLORBAR:
-    # In object-oriented style, we use 'set_xlabel', 'set_ylabel', and 'set_title'
-    fig.colorbar(img, ax=ax[0], label='Amplitude (Log Scale)')
-    ax[0].set_xlabel('Time (s)')
-    ax[0].set_ylabel('Frequency (Hz)')
-    ax[0].set_title(os.path.splitext(os.path.basename(filename))[0])
-
-    trace = st[0]
-
-    # Generate the time axis based on sampling rate and number of points
-    trace_time = np.linspace(0, trace.stats.npts / trace.stats.sampling_rate, trace.stats.npts)
-    trace_data = trace.data
-
-    # Plot natively on ax[1]
-    ax[1].plot(trace_time, trace_data, color='black', linewidth=0.5)
-    ax[1].set_xlim(trace_time[0], trace_time[-1])
-    ax[1].set_xlabel('Time (s)')
-    ax[1].set_ylabel('Velocity / Counts')  # Adjust units as necessary
-    ax[1].grid(True, linestyle='--', alpha=0.5)
-
-    # 3. Global layout adjustments and rendering
-    plt.tight_layout()
-    plt.show()'''
-
 
 
 file = open()
@@ -322,8 +277,15 @@ if freq:
     data = st[0].data
     t = st[0].times()
 
+    N = len(data)
+    T = t[-1] * N / (N - 1)
+    print(f"Frequency Limit: {N / T} Hz")
+    print(f"Time Limit: {T} s")
     win = int(input("\nWindow Size: "))
     step = int(input("Step Size: "))
+    print(f"Frequency Resolution: {N / T / t[win]} Hz")
+    print(f"Time Resolution: {T / N * step} s")
+    time.sleep(1)
     n_windows = (len(data) - win) // step + 1
 
     window = ft.SWFT(data, win, t, step=step)
@@ -335,5 +297,28 @@ if freq:
 
 if args.time or not (args.info or args.freq):
     st.plot()  # show=False)
-
+'''
+if args.info:
+    data = st[0].data
+    t = st[0].times()
+    N=len(data)
+    T=t[-1] * N / (N - 1)
+    print(f"Frequency Limit: {N/T} Hz")
+    print(f"Frequency Resolution: {N/T**2} Hz")
+    print(f"Time Limit: {T} s")
+    print(f"Time Resolution: {T/N} s")
+    x, y = freqfun(data, t)
+    peaks = scan(x, y)
+    i = 0
+    for peak in peaks:
+        if peak["peak_x"] > 0:
+            if peak["si"] >= peak["ei"]:
+                continue
+            i += 1
+            print(f'\nWindow #{i}\n'
+                  f'Frequency: {peak["peak_x"]} Hz\n'
+                  f'Relative Peak Amplitude: {max(y[peak["si"]:peak["ei"] + 1])}\n'
+                  f'Range: {peak["start_x"]} Hz to {peak["end_x"]} Hz \n'
+                  f'Standard Deviation: {peak["sigma"]}\n')
+'''
 if freq: plt.show()
