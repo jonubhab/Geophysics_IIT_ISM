@@ -13,4 +13,4 @@ def freq(y: np.ndarray, t: Optional[np.ndarray] = None):
     plt.show()
 
 
-print(sum(i for i in range(5)))
+print([i for i in range(5)]+[9,8])
