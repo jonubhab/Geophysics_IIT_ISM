@@ -7,7 +7,7 @@ from joblib import Memory
 
 from Complex import *
 
-mem = Memory("./fourier_cache", verbose=0)
+mem = Memory("/home/arjun/Anubhab Sen/PyCharm/Geophysics_IIT_ISM/fourier_cache", verbose=0)
 
 
 @mem.cache
