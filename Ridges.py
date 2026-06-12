@@ -1,5 +1,13 @@
+import pickle
+import subprocess
+import sys
+from copy import deepcopy
+from functools import total_ordering
+from types import ModuleType as MT
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.cm import inferno
 
 '''
 class Ridge:
@@ -60,54 +68,131 @@ class Ridge:
 '''
 
 
-class Ridge:
-
+@total_ordering
+class Point:
     def __init__(self, x, y):
-        # If x and y are arrays or lists, store them directly.
-        # Otherwise, wrap individual floats into a coordinate list.
-        self.x = np.atleast_1d(x).tolist()
-        self.y = np.atleast_1d(y).tolist()
+        self.__x = x
+        self.__y = y
 
-    def copy(self):
-        return Ridge(self.x.copy(), self.y.copy())
+    @property
+    def x(self):
+        return self.__x
 
-    def __iadd__(self, P):
-        if isinstance(P, Ridge):
-            self.x.extend(P.x)
-            self.y.extend(P.y)
-        elif isinstance(P, (tuple, list, np.ndarray)) and len(P) == 2:
-            self.x.append(P[0])
-            self.y.append(P[1])
-        return self
-
-    def __add__(self, P):
-        R = self.copy()
-        R += P
-        return R
-
-    def end(self):
-        return (self.x[-1], self.y[-1])
+    @property
+    def y(self):
+        return self.__y
 
     def __call__(self):
-        return np.array(self.x), np.array(self.y)
+        return self.x, self.y
+
+    def __repr__(self):
+        return f"({self.x}, {self.y})"
+
+    def slope(self, P):
+        if isinstance(P, Point):
+            try:
+                return (P.y - self.y) / (P.x - self.x)
+            except ZeroDivisionError:
+                return float('inf')
+        else:
+            raise TypeError(f"{type(P)} object {P} is incompatible to point {self}")
+
+    def __eq__(self, P):
+        if isinstance(P, Point):
+            return self.x == P.x
+        else:
+            raise TypeError(f"{type(P)} object {P} is incompatible to point {self}")
+
+    def __gt__(self, P):
+        if isinstance(P, Point):
+            return self.x > P.x
+        else:
+            raise TypeError(f"{type(P)} object {P} is incompatible to point {self}")
+
+    def eq(self, P):
+        if isinstance(P, Point):
+            return self.x == P.x and self.y == P.y
+        else:
+            raise TypeError(f"{type(P)} object {P} is incompatible to point {self}")
+
+
+class Ridge:
+
+    def __init__(self, P=None):
+        if P:
+            if isinstance(P, Ridge):
+                self.pts = P.pts
+            elif hasattr(P, '__iter__'):
+                self.pts = P
+            elif isinstance(P, Point):
+                self.pts = [P]
+            else:
+                raise TypeError(f"Cannot pass {type(P)} object {P} to Ridge")
+        else:
+            self.pts = []
+        self.active = True
+
+    def __iadd__(self, P, force=False, closeOK=True):
+        if self.active or force:
+            if isinstance(P, Ridge):
+                self.pts += P.pts
+            elif isinstance(P, Point):
+                self.pts += [P]
+            else:
+                raise TypeError(f"{type(P)} object {P} is incompatible to ridge {self}")
+        elif not closeOK:
+            raise ConnectionRefusedError(f"Cannot join {P} to closed Ridge {self}")
+        self.pts = sorted(self.pts)
+        return self
+
+    def __add__(self, P, force=False, closeOK=True):
+        R = deepcopy(self)
+        R.__iadd__(P, force, closeOK)
+        return R
+
+    def __getitem__(self, i):
+        self.pts = sorted(self.pts)
+        return self.pts[i]
+
+    def __call__(self):
+        x = np.array([i.x for i in self.pts])
+        y = np.array([i.y for i in self.pts])
+        return x, y
 
     def plot(self, plt=plt):
         x, y = self()
-        plt.plot(x, y)
-        plt.scatter(x, y)
-
-    def slope(self, R):
-        X, Y = self.end()
-        try:
-            return (Y - R.y[0]) / (X - R.x[0]) * np.sign(R.y[0] - Y)
-        except ZeroDivisionError:
-            return -1
+        col = np.random.rand(3)
+        plt.scatter(x[1:-1], y[1:-1], s=10, color=col, zorder=3)
+        plt.scatter([x[0], x[-1]], [y[0], y[-1]], color=col, zorder=3)
+        plt.plot(x, y, color=col, zorder=2)
 
     def __contains__(self, P):
-        return any(px == P.x[0] and py == P.y[0] for px, py in zip(self.x, self.y))
+        return any(i.eq(P) for i in self)
 
     def __repr__(self):
-        return str(list(zip(self.x, self.y)))
+        return str(self.pts)
+
+    def close(self):
+        self.active = False
+
+    def __iter__(self):
+        for i in sorted(self.pts): yield i
+
+    def __len__(self):
+        return len(self.pts)
+
+    def slice(self, i, close=True):
+        if i < 0:
+            i = len(self.pts) + i
+        if i < len(self.pts):
+            R1, R2 = Ridge(self.pts[:i + 1]), Ridge(self.pts[i:])
+            if close: R1.close()
+            return R1, R2
+        else:
+            raise IndexError(f"{i} is out of range for {len(self)} sized Ridge {self}")
+
+    def __eq__(self, R):
+        return all(R[i].eq(self[i]) for i in range(len(self)))
 
 
 
@@ -116,6 +201,7 @@ class Map:
         self.map = map
         self.x = x
         self.y = y
+        self.Rs = None
 
     def __repr__(self):
         return f"""
@@ -129,8 +215,9 @@ class Map:
         arr = abs(arr - n)
         return np.argmin(arr)
 
-
     def __getitem__(self, k):
+        if isinstance(k, Point): return self.map[Map.__search(self.x, k.x)][Map.__search(self.y, k.y)]
+
         if isinstance(k, slice):
             if np.ndim(self.map) != 1:
                 result = []
@@ -150,10 +237,9 @@ class Map:
 
     # def __index__(self,k):
 
-    def setTol(self, GVtol,disttol):
+    def setTol(self, GVtol, slopetol):
         self.GVtol = GVtol
-        self.disttol=disttol
-
+        self.slopetol = slopetol
 
     def __iter__(self):
         for i in self.map: yield i
@@ -178,24 +264,17 @@ class Map:
             tol = self.GVtol
 
         amp_obj = self[x]
-        # Extract the raw 1D NumPy array of amplitudes directly
         amp_data = amp_obj.map
         peaks = set()
 
-        # Convert your float coordinate 'tol' into an integer number of array index steps
-        # e.g., if total Y range is 1794 steps over ~3.8 km/s, calculate indices per unit
         y_spacing = self.y[1] - self.y[0] if len(self.y) > 1 else 1
-        idx_tol = int(tol / y_spacing) if tol > 0 else 5  # Default to 5 indices if tol is 0
+        idx_tol = int(tol / y_spacing) if tol > 0 else 3 * y_spacing
 
-        # Loop using clean integer indices across the 1794 elements
         for idx in range(len(self.y)):
-            # Define local window boundaries safely within array limits
             start_bound = max(0, idx - idx_tol)
             end_bound = min(len(self.y), idx + idx_tol + 1)
 
-            # Check if the current point is strictly the local maximum in its neighborhood window
             if amp_data[idx] == max(amp_data[start_bound:end_bound]):
-                # Map the successful integer index back to its real Y float coordinate
                 peaks.add(self.y[idx])
 
         return np.array(list(peaks))
@@ -227,46 +306,92 @@ class Map:
         return Rs
     '''
 
-    def scan(self, tol=0, plt=plt):
+    def scan(self, tol=0):
         if tol == 0:
-            tol = self.disttol
+            tol = self.slopetol
 
-        # 1. Get the list of peak velocity arrays per x coordinate
-        raw_peaks = [self.maxima(i) for i in self.x]
+        peaks = [self.maxima(i) for i in self.x]
         Rs = []
 
-        # 2. Correctly build the initial Ridge objects step-by-step
         for i in range(len(self.x)):
-            current_x = self.x[i]
-            current_y_peaks = raw_peaks[i]
+            x = self.x[i]
+            ys = peaks[i]
 
-            # Generate individual Ridge elements for EVERY peak found at this X coordinate
-            Rx = [Ridge(current_x, p) for p in current_y_peaks]
+            Px = [Point(x, p) for p in ys]
 
-            # Link them up to existing tracks in Rs
-            for R in Rs:
-                for P in Rx:
-                    if 0 <= R.slope(P) <= tol:
-                        R += P
+            ex, ap = [], []
+            for P in Px:
+                ctr = 0
+                ex, ap = [], []
+                for R in Rs:
+                    if R[-1] == P and len(R) > 2 and 0 <= R[-2].slope(P) < tol:
+                        ex += [R]
+                        R1, R2 = R.slice(-2)
+                        ap += [R1, R2, Ridge([R1[-1], P])]
+                        ctr += 1
+                for e in ex: Rs.remove(e)
+                Rs += ap
 
-            # Filter out points that have successfully been integrated into existing chains
-            Rx = [P for P in Rx if not any(P in R for R in Rs)]
-            Rs += Rx
+                ex, ap = [], []
+                for R in Rs:
+                    if P > R[-1] and 0 <= R[-1].slope(P) < tol:
+                        if ctr > 1:
+                            for A in ap:
+                                if A[-1].eq(P): A.close()
+                            ap += [R + P]
+                            ap[-1].close()
+                            ap += [Ridge(P)]
+                        else:
+                            ex += [R]
+                            ap += [R + P]
+                        ctr += 1
+                for e in ex: Rs.remove(e)
+                Rs += ap
 
-        # --- PLOTTING CODE ---
-        # 3. Draw the tracks over the heatmap canvas
-        for R in Rs:
-            R.plot(plt)
+                if ctr == 0: Rs += [Ridge(P)]
 
-        # Draw the background heatmap matrix
-        heatmap = plt.pcolormesh(
-            self.x, self.y, self.map.T, shading="auto", cmap="inferno"
-        )
-        plt.colorbar(heatmap, label="Signal Strength")
-        plt.xlabel("Time Period (s0)")
-        plt.ylabel("Group Velocity (m/s)")
-        plt.title("2D Heatmap")
+        self.Rs = Rs
 
         return Rs
 
+    def plot(self, plt=plt, show=True):
 
+        if self.Rs:
+            for R in self.Rs:
+                R.plot(plt)
+
+        Per, Vitg = np.meshgrid(self.x, self.y)
+        heatmap = plt.contourf(Per, Vitg, self.map.T, 35, cmap=inferno)
+
+        if isinstance(plt, MT):
+            fig, plt = plt.gcf(), plt.gca()
+        else:
+            fig = plt.get_figure()
+
+        fig.colorbar(heatmap, label="Signal Strength")
+        plt.set_xlabel("Time Period (s)")
+        plt.set_ylabel("Group Velocity (km/s)")
+        plt.set_title("2D Heatmap")
+
+        if show:
+            tmp = "tmp67as1305kdgf.pkl"
+            pickle.dump(fig, open(tmp, "wb"))
+            script = f"""
+import pickle
+import os
+import matplotlib.pyplot as plt
+fig=pickle.load(open("tmp67as1305kdgf.pkl", "rb"))
+os.remove("tmp67as1305kdgf.pkl")
+#mgr = plt.new_figure_manager(1)
+#mgr.canvas.figure = fig
+#fig.set_canvas(mgr.canvas)
+#fig.canvas.draw()
+plt.show()
+"""
+            subprocess.Popen([sys.executable, "-c", script])
+
+        '''
+        heatmap = plt.pcolormesh(
+            self.x, self.y, self.map.T, shading="auto", cmap="inferno"
+            )
+        '''
