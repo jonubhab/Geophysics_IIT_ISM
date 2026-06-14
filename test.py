@@ -1,7 +1,7 @@
-import matplotlib.pyplot as plt
+
 import numpy as np
 
-from Ridges import Map
+from Map import *
 
 
 def test():
