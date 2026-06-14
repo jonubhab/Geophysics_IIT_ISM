@@ -2,9 +2,8 @@ import pickle
 import subprocess
 import sys
 from copy import deepcopy
-from functools import total_ordering
+from functools import total_ordering, partial
 from types import ModuleType as MT
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.cm import inferno
@@ -123,12 +122,49 @@ class Ridge:
         y = np.array([i.y for i in self.pts])
         return x, y
 
+    def _on_pick(self, event):
+        # Ignore clicks on artists that don't belong to this ridge
+        if event.artist not in (self._scatter_mid, self._scatter_ends, self._line):
+            return
+
+        self._selected = not self._selected
+        col = 'red' if self._selected else self.col  # swap to highlight colour
+
+        self._scatter_mid.set_color(col)
+        self._scatter_ends.set_color(col)
+        self._line.set_color(col)
+        event.artist.figure.canvas.draw_idle()  # redraw without blocking
+
+        if self._on_select:
+            self._on_select(self)
+
+    def plot(self, ax, on_select=None):
+        x, y = self()
+        self._selected = False
+        self.col=np.random.rand(3)
+        self._base_col = self.col  # <-- store base color for reset after unpickle
+        self._on_select = None  # don't store the callback (not picklable)
+
+        self._scatter_mid = ax.scatter(x[1:-1], y[1:-1], s=10,
+                                       color=self.col, zorder=3, picker=True)
+        self._scatter_ends = ax.scatter([x[0], x[-1]], [y[0], y[-1]],
+                                        color=self.col, zorder=3, picker=True)
+        self._line, = ax.plot(x, y, color=self.col, zorder=2, pickradius=5)
+
+        # Tag each artist with a back-reference to this ridge
+        for artist in (self._scatter_mid, self._scatter_ends, self._line):
+            artist._ridge = self
+
+        # Connect only if we have a real canvas (not inside a to-be-pickled fig)
+        ax.figure.canvas.mpl_connect('pick_event', self._on_pick)
+
+    '''    
     def plot(self, plt=plt):
         x, y = self()
         col = np.random.rand(3)
         plt.scatter(x[1:-1], y[1:-1], s=10, color=col, zorder=3)
         plt.scatter([x[0], x[-1]], [y[0], y[-1]], color=col, zorder=3)
-        plt.plot(x, y, color=col, zorder=2)
+        plt.plot(x, y, color=col, zorder=2)'''
 
     def __contains__(self, P):
         return any(i == P for i in self)
@@ -331,8 +367,8 @@ class Map:
                 for nx, nPx in A.scan():
                     if len(nPx) > 0:
                         dt = np.log(nx) - np.log(x)  # always > 0
-                        yi = P.y - dt * mtol  # lower bound
-                        yf = P.y + dt * mtol  # upper bound
+                        yi = np.exp(np.log(P.y) - dt * mtol)  # lower bound
+                        yf = np.exp(np.log(P.y) + dt * mtol)  # upper bound
 
                         # searchsorted gives first index >= yi (not nearest)
                         nPx_sorted = sorted(nPx, key=lambda p: p.y)
@@ -364,10 +400,6 @@ class Map:
 
     def plot(self, plt=plt, show=True):
 
-        if self.Rs:
-            for R in self.Rs:
-                R.plot(plt)
-
         Per, Vitg = np.meshgrid(self.x, self.y)
         heatmap = plt.contourf(Per, Vitg, self.map.T, 35, cmap=inferno)
 
@@ -375,6 +407,10 @@ class Map:
             fig, plt = plt.gcf(), plt.gca()
         else:
             fig = plt.get_figure()
+
+        if self.Rs:
+            for R in self.Rs:
+                R.plot(plt,on_select=partial(print,R))
 
         fig.colorbar(heatmap, label="Signal Strength")
         plt.set_xlabel("Time Period (s)")
@@ -388,12 +424,24 @@ class Map:
 import pickle
 import os
 import matplotlib.pyplot as plt
-fig=pickle.load(open("tmp67as1305kdgf.pkl", "rb"))
-os.remove("tmp67as1305kdgf.pkl")
-#mgr = plt.new_figure_manager(1)
-#mgr.canvas.figure = fig
-#fig.set_canvas(mgr.canvas)
-#fig.canvas.draw()
+
+fig = pickle.load(open("{tmp}", "rb"))
+os.remove("{tmp}")
+
+ax = fig.axes[0]
+def on_pick(event):
+    artist = event.artist
+    if not hasattr(artist, '_ridge'):
+        return
+    ridge = artist._ridge
+    ridge._selected = not getattr(ridge, '_selected', False)
+    col = 'red' if ridge._selected else ridge._base_col
+    ridge._scatter_mid.set_color(col)
+    ridge._scatter_ends.set_color(col)
+    ridge._line.set_color(col)
+    fig.canvas.draw_idle()
+
+fig.canvas.mpl_connect('pick_event', on_pick)
 plt.show()
 """
             subprocess.Popen([sys.executable, "-c", script])

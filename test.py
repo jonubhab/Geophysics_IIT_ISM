@@ -15,3 +15,18 @@ def test():
     M.plot(plt)
 
 test()
+
+'''
+P = np.loadtxt('DCPdata/write_FP.txt')
+
+print("Linear: ",P)
+print(P[1:]-P[:-1])
+
+L=np.log(P)
+print("\nLogarithmic: ",L)
+print(L[1:]-L[:-1])
+
+E = np.exp(P)
+print("\nExponential: ",E)
+print(E[1:]-E[:-1])
+'''
